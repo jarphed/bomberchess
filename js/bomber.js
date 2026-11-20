@@ -57,10 +57,12 @@
 
   // closeAt[cell]: round clock time when the cell turns into wall (-1: walled in before the round starts,
   // Infinity: stays open); order: cells by closing time; pre/sk: rings walled in at the start/end of the
-  // round. Deterministic, so LAN clients rebuild exactly the server's plan from (round, dur).
-  function shrinkPlan(board, round, dur) {
+  // round. Deterministic, so LAN clients rebuild exactly the server's plan from (round, dur, standalone).
+  function shrinkPlan(board, round, dur, standalone) {
     const closeAt = new Array(board.cells.length).fill(Infinity);
-    const pre = shrinkRings(board, round - 1), k = shrinkRings(board, round);
+    const maxK = Math.max(0, rings(board).max - 1);
+    const pre = standalone ? 0 : shrinkRings(board, round - 1);
+    const k = standalone ? maxK : shrinkRings(board, round);
     if (k > 0) {
       const R = rings(board).ring;
       const sw = SWEEP[board.n] || SWEEP[2];
@@ -68,9 +70,9 @@
       let mx = 0, my = 0;
       board.cells.forEach(c => { mx += c.cx; my += c.cy; });
       mx /= board.cells.length; my /= board.cells.length;
-      const R0 = rings(board).ring;
-      board.cells.forEach(c => { if (R0[c.id] < pre) closeAt[c.id] = -1; });
-      const t0 = dur * SHRINK_WIN[0], span = dur * (SHRINK_WIN[1] - SHRINK_WIN[0]) / Math.max(1, k - pre);
+      board.cells.forEach(c => { if (R[c.id] < pre) closeAt[c.id] = -1; });
+      const t0 = standalone ? dur : dur * SHRINK_WIN[0];
+      const span = standalone ? Math.max(10, dur * 0.45) : dur * (SHRINK_WIN[1] - SHRINK_WIN[0]) / Math.max(1, k - pre);
       for (let r = pre; r < k; r++) {
         const bySector = [];
         board.cells.forEach(c => {
@@ -94,6 +96,23 @@
     let first = 0;
     while (first < order.length && closeAt[order[first]] < 0) first++;
     return { closeAt, order, first, pre, sk: k };
+  }
+
+  // Classic standalone Bomberman arena: no chess pieces, only spaced indestructible stone pillars ('W').
+  function setupArena(board, occ) {
+    occ.fill(null);
+    const R = rings(board).ring;
+    let uid = 1;
+    for (const c of board.cells) {
+      if (R[c.id] < 1) continue;
+      if (board.kind === 'square') {
+        if ((c.gx & 1) === 1 && (c.gy & 1) === 1 && !c.nT.some(n => occ[n])) {
+          occ[c.id] = { t: 'W', o: -1, moved: false, id: uid++ };
+        }
+      } else if (!c.nT.some(n => occ[n])) {
+        occ[c.id] = { t: 'W', o: -1, moved: false, id: uid++ };
+      }
+    }
   }
 
   const isClosed = (ps, c) => !!ps.closeAt && ps.closeAt[c] <= ps.clock;
@@ -162,12 +181,15 @@
   // with the others). A bomber that is hit sits out the rest of the round.
   function create(G) {
     const round = G.bomberRound || 1;
+    const standalone = !!(BC.isBomberOnly && G.settings && BC.isBomberOnly(G.settings));
+    const pk = BC.POWER_LEVELS[BC.powerLevelOf(G.settings && G.settings.powerLevel)].k;
     const ps = {
-      time: 0, clock: 0, dur: G.settings.bomberTime, ready: READY_T, round,
+      time: 0, clock: 0, dur: G.settings.bomberTime, ready: READY_T, round, standalone,
+      puTimer: standalone ? 1.5 / pk : Infinity,
       bombers: [], bombs: [], bombAt: new Map(), flames: new Map(), flameOwner: new Map(), explosions: [],
-      hits: [], kills: [], thudAt: -1, hurried: false,
+      hits: [], kills: [], deathOrder: [], thudAt: -1, hurried: false,
     };
-    Object.assign(ps, shrinkPlan(G.board, round, ps.dur));
+    Object.assign(ps, shrinkPlan(G.board, round, ps.dur, standalone));
     ps.nextClose = ps.first;
     const taken = new Set();
     G.players.forEach(pl => {
@@ -391,6 +413,7 @@
     if (bm) { ps.bombs.splice(ps.bombs.indexOf(bm), 1); ps.bombAt.delete(c); }
     ps.flames.delete(c);
     ps.flameOwner.delete(c);
+    if (ps.standalone && G.chess.powerups && G.chess.powerups.delete(c) && G.rev !== undefined) G.rev++;
     if (G.chess.occ[c]) return;
     G.emit({ e: 'burst', c, col: ['#d8d0c0', '#a89c88', '#6e6458', '#fff'], n: 10, sp: 110, sz: 3 });
     if (ps.clock - ps.thudAt > 0.12) {
@@ -403,15 +426,67 @@
   function knockOut(G, ps, b, by, crushed) {
     b.dying = true; b.deathT = 0; b.crushed = !!crushed;
     if (by >= 0 && by !== b.p) ps.kills.push({ by, victim: b.p });
+    if (ps.deathOrder) ps.deathOrder.push({ p: b.p, by, crushed: !!crushed });
     G.emit({ e: 'snd', n: 'death' });
     if (crushed) G.emit({ e: 'popup', c: occCell(b), text: 'CRUSHED!', col: '#ffb040' });
     if (G.onBomberHit) G.onBomberHit(b.p, by, crushed);
+  }
+
+  function pickupLivePowerup(G, b, id, cell) {
+    const pl = G.players[b.p];
+    if (id === 'kick') {
+      b.kicks += BC.KICKS;
+      if (pl) pl.stats.kick = b.kicks;
+    } else if (id === 'bomb') {
+      b.bombs = Math.min(BC.STAT_MAX.bomb, b.bombs + 1);
+      if (pl) pl.stats.bomb = b.bombs;
+    } else if (id === 'fire') {
+      b.range = Math.min(BC.STAT_MAX.fire, b.range + 1);
+      if (pl) pl.stats.fire = b.range;
+    } else if (id === 'speed') {
+      const sp = Math.min(BC.STAT_MAX.speed, (pl ? pl.stats.speed : 0) + 1);
+      if (pl) pl.stats.speed = sp;
+      b.step = stepTimeFor(sp);
+    } else if (id === 'mystery') {
+      b.invuln = Math.max(b.invuln, 12);
+      if (pl) pl.sp.mystery = true;
+    } else {
+      b[id] = true;
+      if (pl) pl.sp[id] = true;
+    }
+    if (G.rev !== undefined) G.rev++;
+    G.emit({ e: 'snd', n: 'pickup' });
+    G.emit({ e: 'burst', c: cell, col: ['#fff', '#7ef2ff', '#ffe14a', BC.PLAYER_COLORS[b.p]], n: 26, sp: 200, sz: 3 });
+    G.emit({ e: 'popup', c: cell, text: BC.POWERUP_BY_ID[id].name + '!', col: BC.PLAYER_COLORS[b.p] });
+  }
+
+  function spawnArenaPowerup(G, ps) {
+    const pus = G.chess.powerups;
+    const pk = BC.POWER_LEVELS[BC.powerLevelOf(G.settings && G.settings.powerLevel)].k;
+    const cap = Math.round(Math.max(5, G.board.cells.length / 11) * pk);
+    if (pus.size >= cap) return;
+    const occupied = new Set(ps.bombers.filter(b => b.alive && !b.dying).map(occCell));
+    const free = G.board.cells.filter(c =>
+      !G.chess.occ[c.id] && !isClosed(ps, c.id) && !ps.bombAt.has(c.id) &&
+      !ps.flames.has(c.id) && !pus.has(c.id) && !occupied.has(c.id)
+    );
+    if (!free.length) return;
+    const cell = BC.u.pick(free).id;
+    pus.set(cell, BC.u.weighted(BC.POWERUPS).id);
+    if (G.rev !== undefined) G.rev++;
+    G.emit({ e: 'burst', c: cell, col: ['#fff', '#7ef2ff', '#ffe14a'], n: 12, sp: 110, sz: 2 });
   }
 
   function update(G, ps, dt, inputs) {
     ps.time += dt;
     if (ps.ready > 0) { ps.ready -= dt; return; }
     ps.clock += dt;
+
+    if (ps.standalone && (ps.puTimer -= dt) <= 0) {
+      const pk = BC.POWER_LEVELS[BC.powerLevelOf(G.settings && G.settings.powerLevel)].k;
+      ps.puTimer = BC.u.rand(2.2, 4.0) / pk;
+      spawnArenaPowerup(G, ps);
+    }
 
     // walls closing in
     if (!ps.hurried && ps.first < ps.order.length && ps.clock >= ps.closeAt[ps.order[ps.first]] - WARN_T - 1) {
@@ -432,6 +507,12 @@
       if (b.invuln > 0) b.invuln -= dt;
       const inp = inputs[b.p] || {};
       moveBomber(G, ps, b, inp, dt);
+      const cell = occCell(b);
+      if (ps.standalone && G.chess.powerups && G.chess.powerups.has(cell)) {
+        const id = G.chess.powerups.get(cell);
+        G.chess.powerups.delete(cell);
+        pickupLivePowerup(G, b, id, cell);
+      }
       if (inp.bomb) placeBomb(G, ps, b);
     }
 
@@ -474,7 +555,7 @@
   }
 
   BC.Bomber = {
-    create, update, blastCells, canEnter, occCell, isClosed, rings, shrinkRings, shrinkPlan, slideStop,
+    create, update, setupArena, blastCells, canEnter, occCell, isClosed, rings, shrinkRings, shrinkPlan, slideStop,
     FUSE, WALK_FUSE, WAKE_T, WALK_STEP, KICK_STEP, WARN_T, DROP_T, stepTimeFor,
   };
 })();

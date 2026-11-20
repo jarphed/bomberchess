@@ -1,6 +1,12 @@
 # BOMBER CHESS ボンバーチェス
 
-Chess that alternates with Bomberman on the same board, for 2–5 players.
+Chess, Bomberman and side-view artillery for 2–5 players. The cycle is **Chess → Bomber → Chess → Worms**, then repeats. Each battle uses the position left by the preceding chess round.
+
+Open **Game Modes** in local setup or, as host, in the LAN lobby. **Chess**, **Bomberman** and **Worms** are all checked by default, and any combination of at least one mode can be selected:
+- **Chess + Bomberman + Worms**, **Chess + Bomberman**, or **Chess + Worms**: plays the full combined game where chess pieces affect and are affected by the battles.
+- **Worms** only: plays as a standalone last-worm-standing artillery match on a freshly generated Worms landscape with classic weapon ammo and no chess rules or piece removal.
+- **Bomberman** only: plays as a standalone last-man-standing Bomberman match on a stone-pillar arena where power-ups spawn randomly during the game and closing walls trigger Sudden Death after the timer.
+- **Chess** only: plays pure multiplayer Chess with special captures (Bomberman power-ups, **Chess Moves / Round**, and **Bomber Time** are hidden).
 
 ## Play with friends on your network (LAN)
 
@@ -11,8 +17,9 @@ Chess that alternates with Bomberman on the same board, for 2–5 players.
 - If someone disconnects, a CPU takes over their seat. Reloading the page puts them back in it.
 - Two people can share one keyboard by taking two seats in the same browser. They use different key sets.
 - Open seats are filled by CPU players when the game starts. The host sets how smart they are with the **BRAIN SIZE OF CPU** slider (see [CPU players](#cpu-players)).
-- The host also sets the **TURN TIME** for each chess turn and how many power-ups lie on the chessboard with the **POWER-UPS** slider (see [Chess phase](#chess-phase)). The host can also switch **CHAINED DEATHS** (see [Special captures](#special-captures)) and **SHEEP GATES** (see [Sheep gates](#sheep-gates)) on, and pick the chess round the gates open in, and switch on **PLAYERS CAN REVIVE** (see [Bomber phase](#bomber-phase)) and **BLOOD** (see [Blood](#blood)).
-- Press **Esc** or click **MENU** during a game to get the in-game menu:
+- The default board is for **4 players**. [Chained deaths](#special-captures), [sheep gates](#sheep-gates) and [players can revive](#bomber-phase) are on by default. The host can turn any of them off or choose the round when the gates open.
+- The host also sets the **TURN TIME** for each chess turn and how many power-ups lie on the chessboard with the **POWER-UPS** slider (see [Chess phase](#chess-phase)).
+- Press **Esc** or click **MENU** during a game to get the in-game menu (including **MUSIC: ON / OFF** to mute music while keeping sound effects on; also available on the title screen):
   - **LEAVE GAME** hands your seat to a CPU for good and takes you back to the lobby. You won't be pulled back into the match.
   - **END GAME FOR ALL** (host only) sends everyone back to the lobby.
   - **QUIT TO TITLE** leaves the game and disconnects.
@@ -20,17 +27,17 @@ Chess that alternates with Bomberman on the same board, for 2–5 players.
 
 ## Play on one computer
 
-Open `index.html` directly, or use the URL above, and pick **LOCAL GAME**. The setup screen has the same settings as the LAN lobby, including **TURN TIME**, **BRAIN SIZE OF CPU**, **POWER-UPS**, **CHAINED DEATHS**, **SHEEP GATES**, **PLAYERS CAN REVIVE** and **BLOOD**. Press **Esc** or click **MENU** to pause or quit.
+Open `index.html` directly, or use the URL above, and pick **LOCAL GAME**. The setup screen has the same settings as the LAN lobby, including **TURN TIME**, **BRAIN SIZE OF CPU**, **POWER-UPS**, **CHAINED DEATHS**, **SHEEP GATES** and **PLAYERS CAN REVIVE**. Press **Esc** or click **MENU** to pause or quit.
 
 ## In-game help
 
-- A column down the right edge of the screen shows every power-up. Click one to see how it works, and click anywhere else to close the card.
+- During chess and Bomber, a column down the right edge of the screen shows every power-up. Click one to see how it works, and click anywhere else to close the card.
 
 ## Chess phase
 
 - When it's your turn, a **YOUR TURN!** banner sweeps across the screen with a fanfare. Click or press **Enter** to skip it. Other players' turns get a smaller banner across the board. A nameplate on the top edge of the board shows whose turn it is and the seconds left.
 - Every turn has a time limit: **TURN TIME** in the lobby, from 15 seconds to 2 minutes in 15-second steps (30 seconds by default). The last 5 seconds of your turn tick down and the board's edge flashes red. Run out of time and you lose that turn, which counts as one of the round's moves, and a sheep appears on a random free square.
-- Move a piece onto a sheep, or slide across it, and the sheep stampedes. It runs around in knight jumps until it tramples a piece or bumps into another sheep, just like the knight's strike. It never tramples the piece that spooked it, and it leaves kings alone. A sheep it bumps into stampedes next, so one sheep can set off a whole chain of them (with or without **CHAINED DEATHS**).
+- Move a piece onto a sheep, or slide across it, and the sheep stampedes. It runs around in knight jumps until it tramples a piece or bumps into another sheep, just like the knight's strike. It never tramples the piece that spooked it. A sheep it bumps into stampedes next, so one sheep can set off a whole chain of them (with or without **CHAINED DEATHS**).
 - The more sheep a chain of stampedes sets running, the bigger the bang at the end: when a sheep in the chain runs into a piece, it blows up and takes every square up to half the number of sheep so far with it (rounded down). For example, the 6th sheep of a chain blows up everything up to 3 squares around it. A single sheep doesn't blow up. Kings put their helmets on, and sheep caught in the blast stampede next, which makes the chain longer still.
 - Click any piece to see where it can move, even when it isn't your turn. You can only move your own pieces on your turn.
 - A pawn standing on its side's pawn row can move 1 or 2 steps, and that includes a revived pawn.
@@ -51,21 +58,56 @@ Open `index.html` directly, or use the URL above, and pick **LOCAL GAME**. The s
 - **KICK** gives you 3 kicks for every one you pick up, and you keep them until you use them. Run into a bomb and it slides away along the line, until it stops against a piece, a wall, another bomb or a bomber. Each kick uses one up. With **BOMBPASS** too, you kick the bomb instead of walking over it. You only walk over it if it can't move.
 - **X-BOMB** turns your bombs for the next bomber round into two sticks of dynamite crossed like an X. Their fire spreads along the diagonals (the bishop lines) instead of straight. On the triangle and pentagon boards the sticks point along those boards' bishop lines.
 
+## Worms phase
+
+Every time a Worms round starts, a brand-new procedural Worms landscape is generated with hilly islands, cliffs, valleys, floating sky-islands, steel girder bridges, open water channels, and one of four visual biomes (**Grasslands**, **Highland**, **Coral Atoll**, or **Frost Fjord**). Explosions carve craters through turf and rock, and worms knocked into the sea drown!
+
+| Action | Keyboard / Mouse | Gamepad |
+| --- | --- | --- |
+| Walk / flee left or right | A / D or ← / → | Stick or D-pad left / right |
+| Raise / lower aim | W / S or ↑ / ↓ | Stick or D-pad up / down |
+| Jump / double-tap backflip | Space (press Space again mid-air to backflip) | A |
+| Change weapon | Q or Mouse Wheel (or 1–6 / click sidebar weapon) | Y |
+| Charge, fire, or detonate | Hold Left Mouse Button to charge & release to fire; click Left Mouse Button mid-flight to detonate Sheep / split Cluster | Hold X, release to fire |
+
+Your surviving chess pieces determine your weapon loadout — each unique piece type on the chessboard unlocks one weapon (duplicates of the same piece type, such as two Knights or several Pawns, still grant just that one weapon type):
+
+| Chess Piece | Weapon | Behavior |
+| --- | --- | --- |
+| King | **Rocket** | Balanced bazooka that arcs and curves strongly with the wind; always available |
+| Pawn | **Grenade** | Timed 3s grenade that bounces off terrain and rolls into craters |
+| Knight | **Mortar** | Standing field mortar placed in front of your worm that fires steeply upward (tilting slightly left/right) so shells rain down from above |
+| Bishop | **Shotgun** | Instant hitscan blast with a muzzle flash — no charging needed, impacts the aim line immediately |
+| Rook | **Drill** | Heavy low-gravity siege bore that tunnels through up to 6 layers of cover |
+| Queen | **Dynamite** | Tossed stick of red TNT with a sizzling fuse and hefty close-range blast |
+
+Dropped weapon crates exclusively contain four special superweapons (**Cluster** and **Sheep** are common crate finds, while **Meteor** and **Holy Hand Grenade** share the same rarer drop rate):
+- **Cluster** (Crate): Long-range bomb that splits on impact, fuse, or left-click into 5 forward-arcing explosive pellets.
+- **Sheep** (Crate): Bounds across islands, leaps steps, turns back at walls; left-click mid-run to detonate.
+- **Meteor** (Crate, rare): Calls a flaming orbital strike diagonally down from the sky.
+- **Holy Hand Grenade** (Crate, rare): Yellow-and-white cross-topped grenade that bounces into place, levitates upright in a beam of heavenly light as an angelic choir sings *"HALLELUJAH!"*, and detonates with a massive crater.
+
+Shot strength (with a growing power cone along the aim line, a compact power bar beneath the worm, and a previous-shot power marker) and retreat timers are displayed directly around the active worm, while a compact single-weapon pill pops up above the worm whenever you cycle through weapons with **Q** or the **mouse scroll wheel**. Watch for supply drops between turns: walk into a crate to collect health or scavenge a single-use round of a missing piece weapon.
+
+Each turn lasts up to 14 seconds. After firing, you get **3 seconds of retreat time** to run and jump clear of grenades or close blasts (taking damage ends your retreat immediately). Blast knockback sends worms flying, hard drops cause fall damage, and wind shifts every turn. The battle ends with one worm left, or after each survivor has had three turns. Everyone gets a worm, even players already out of chess. A knockout costs the victim a piece when chess resumes, and an enemy knockout can restore one of your lost pawns, under the same rules as Bomber. With **PLAYERS CAN REVIVE** on, a sole surviving worm can bring its king back. Bomber-specific power-ups and closing walls are saved for Bomber rounds.
+
+The girders and supply-yard art use Kenney’s [Pixel Platformer: Industrial Expansion](https://kenney.nl/assets/pixel-platformer-industrial-expansion) (CC0), alongside the game’s existing chess pieces and sheep.
+
 ## Special captures
 
-Capturing any piece except a pawn sets off a strike. Strikes can hit anyone's pieces, including your own, and sheep, but never a king. No strike can knock a player out of the game.
+Capturing any piece except a pawn sets off a strike. Strikes can hit anyone's pieces, including your own, sheep and kings.
 
 | Captured piece | What happens |
 | --- | --- |
 | Rook | The tower splits and falls along the rook lines. It crushes every piece up to 2 steps away. The piece that captured the rook is safe. |
-| Knight | The knight wakes up and grows eyes and legs. It gallops around in knight jumps until it runs into a piece or a sheep, then tramples it (a sheep just gets spooked). It never attacks the piece that captured it, and it leaves kings alone. |
-| Bishop | A bolt of lightning hits one random piece or sheep on the board, never a king. |
-| Queen | A plane flies across the board and drops a few bombs at random spots along its path. Any piece where a bomb lands is destroyed. |
-| King | A nuke hits a random spot and destroys everything in a 4×4 area. A checkmate also sets one off. |
+| Knight | The knight wakes up and grows eyes and legs. It gallops around in knight jumps until it runs into a piece or a sheep, then tramples it (a sheep just gets spooked). It never attacks the piece that captured it. |
+| Bishop | A bolt of lightning hits one random piece or sheep on the board. |
+| Queen | A plane flies across the board and drops a few bombs at random spots along its path. Any piece where a bomb lands is hit. |
+| King | A nuke hits a random spot and hits everything in a 4×4 area. A checkmate also sets one off. |
 
-- During the falling tower, the airstrike and the nuke, every king puts on a helmet, and anything that lands on it bounces off.
+- Whenever a strike or stampede goes off, every king puts on a helmet. Each king's helmet can take **10 hits**, getting visibly more dented and cracked with every hit until it breaks and disappears on the 10th hit. Once a king's helmet is gone, the next strike that hits the king destroys it and knocks that player out!
 - A sheep hit by a strike isn't hurt. It loses some wool, gets spooked and stampedes once the strike is over, with or without **CHAINED DEATHS**.
-- With **CHAINED DEATHS** off (the default), pieces destroyed by a strike don't set off their own strike. Switch it on in the lobby, and any knight, bishop, rook or queen killed by a strike (or by a stampeding sheep) sets off its own strike next. For example, the falling tower crushes a queen, her airstrike hits a rook, and down comes another tower. The strikes go off one after another until the chain runs out.
+- With **CHAINED DEATHS** on, any knight, bishop, rook or queen killed by a strike (or by a stampeding sheep) sets off its own strike next. For example, the falling tower crushes a queen, her airstrike hits a rook, and down comes another tower. The strikes go off one after another until the chain runs out. Turn this off to stop pieces destroyed by a strike from setting off their own.
 - The game waits for the strike to finish before the next turn starts.
 - On the triangle and pentagon boards, the falling rook and the 4×4 nuke area use the same rook lines and cell sizes as everywhere else on those boards.
 - When you aim at a piece you can capture, the game shows which strike it will set off. For a rook, it also highlights where the tower will fall.
@@ -81,7 +123,7 @@ Switch **SHEEP GATES** on in the lobby (or on the local setup screen) and the bo
 
 ## Blood
 
-Switch **BLOOD** on in the lobby (or on the local setup screen) for gore. A sheep that blows up at the end of a chain of stampedes bursts into bloody bits: its head, legs, lumps of wool and a bone. A sheep caught by a strike bleeds and loses bloody tufts of wool. A bomber that gets blown up bursts into its head, arms, body and legs, and one squashed by a falling wall squirts blood and an arm and a leg out from under it. The blood and some of the body parts stay on the ground for the rest of the round, and fade away when the board flips.
+Gore is always active across all modes. A sheep that blows up at the end of a chain of stampedes bursts into bloody bits: its head, legs, lumps of wool and a bone. A sheep caught by a strike bleeds and loses bloody tufts of wool. A bomber that gets blown up bursts into its head, arms, body and legs, and one squashed by a falling wall squirts blood and an arm and a leg out from under it. In **Worms**, hits spray blood across chess-piece platforms and girders (staining solid terrain until craters blast it away), and knocked-out worms and exploding sheep burst into bouncing pixel gibs, helmets and bones.
 
 ## CPU players
 

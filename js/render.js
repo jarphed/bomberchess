@@ -231,6 +231,7 @@
     for (const it of list) {
       if (it.draw) { it.draw(); continue; }
       const pc = it.pc, i = it.i, c = board.cells[i];
+      if (pc.t === 'W') { pillarBlock(G, c); continue; }
       const y = c.sy;
       const lift = G.boardMode === 'chess' && G.selected === i ? 4 + Math.sin(G.time * 10) * 2 : 0;
       const doomed = G.phase === 'pawnLoss' && G.pawnLoss.some(l => l.id === pc.id && !l.boomed);
@@ -244,7 +245,10 @@
         continue;
       }
       drawPiece(G, pc, c.sx, y, 1, 1, false, false, lift);
-      if (helmet && pc.t === 'K') SX.drawHelmet(G, i, c.sx, y - lift);
+      if (helmet && pc.t === 'K') {
+        const pl = pc.o >= 0 ? G.players[pc.o] : null;
+        SX.drawHelmet(G, i, c.sx, y - lift, pl ? pl.helmetHits || 0 : BC.KING_HELMET_HITS);
+      }
     }
     if (G.phase === 'pawnLoss') G.pawnGain.forEach(g => { if (!g.done) drawRevive(G, g); });
     if (a) {
@@ -518,6 +522,28 @@
     });
   }
 
+  // Indestructible standalone-Bomberman stone pillar block
+  function pillarBlock(G, c) {
+    ctx.save();
+    ctx.fillStyle = G.board.pat.block;
+    ctx.fill(c.path);
+    ctx.save();
+    ctx.clip(c.path);
+    ctx.translate(2, 2);
+    ctx.strokeStyle = 'rgba(255,250,235,0.42)';
+    ctx.lineWidth = 3;
+    ctx.stroke(c.path);
+    ctx.translate(-4, -4);
+    ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+    ctx.lineWidth = 4;
+    ctx.stroke(c.path);
+    ctx.restore();
+    ctx.strokeStyle = 'rgba(10,6,24,0.85)';
+    ctx.lineWidth = 2;
+    ctx.stroke(c.path);
+    ctx.restore();
+  }
+
   // ---- closing walls (from the third bomber round)
   // a raised block: wall bricks with a lit top-left bevel and a dark bottom-right one
   function wallBlock(G, c, dy, alpha) {
@@ -691,8 +717,8 @@
       R.drawChar(b.p, 1, x - S / 2 + u.rand(-j, j), y - S * 0.62 + u.rand(-j, j), S, Math.floor(G.time * 20) % 2 === 0);
       return;
     }
-    // BLOOD: the bomber has burst into bits (gore.js), there's nothing left to fly off
-    if (G.cfg && G.cfg.blood && BC.Gore) return;
+    // The bomber has burst into bits (gore.js); there's nothing left to fly off
+    if (BC.Gore) return;
     const k = Math.min(1, (T - HIT) / (DEATH_T - HIT - 0.05));
     const e = k * k;
     const rise = S * 0.7 * e;
@@ -817,16 +843,34 @@
   }
 
   function drawHUD(G) {
+    const bomberOnly = !!(G.cfg && BC.isBomberOnly(G.cfg));
     R.panel(HX, 12, HW, 696, { bg: '#140f34', edge: '#4a3fa0' });
     R.text('BOMBER', HX + 18, 26, { size: 22, color: '#ff5a3c', outline: 5 });
-    R.text('CHESS', HX + 18 + R.measure('BOMBER ', 22), 26, { size: 22, color: '#ffe14a', outline: 5 });
-    R.text('ボンバーチェス', HX + HW - 18, 24, { size: 20, jp: true, align: 'right', color: '#9fe8ff' });
+    R.text(bomberOnly ? 'ARENA' : 'CHESS', HX + 18 + R.measure('BOMBER ', 22), 26, { size: 22, color: '#ffe14a', outline: 5 });
+    R.text(bomberOnly ? 'ボンバーマン' : 'ボンバーチェス', HX + HW - 18, 24, { size: 20, jp: true, align: 'right', color: '#9fe8ff' });
 
     // phase box
     const py = 62;
     const bomberish = G.phase === 'bomber' || G.phase === 'toBomber';
     R.panel(HX + 12, py, HW - 24, 104, { bg: bomberish ? '#3a0f1a' : '#0f2a3a', edge: bomberish ? '#ff5a3c' : '#3fc0ff' });
-    if (bomberish) {
+    if (G.phase === 'toWorms') {
+      R.text('WORMS PHASE', HX + 26, py + 12, { size: 18, color: '#bff07a' });
+      R.text(G.cfg && G.cfg.playChess ? 'YOUR PIECES UNLOCK WEAPONS!' : 'GET READY FOR ARTILLERY!', HX + 26, py + 50, { size: 12, color: '#fff' });
+    } else if (bomberOnly) {
+      R.text('BOMBERMAN', HX + 26, py + 12, { size: 18, color: '#ff8a5c' });
+      R.text('サバイバル', HX + HW - 26, py + 10, { size: 18, jp: true, align: 'right', color: '#ffb0a0' });
+      const ps = G.bomber;
+      const left = ps ? ps.dur - ps.clock : G.cfg.bomberTime;
+      if (left > 0) {
+        const warn = left < 10 && Math.floor(G.time * 4) % 2 === 0;
+        R.text('WALLS IN ' + fmtTime(left), HX + 26, py + 44, { size: 22, color: warn ? '#ff3030' : '#fff' });
+        R.text('POWER-UPS SPAWN RANDOMLY  •  LAST STANDING WINS', HX + 26, py + 82, { size: 7, color: '#ffb0a0' });
+      } else {
+        const flash = Math.floor(G.time * 4) % 2 === 0;
+        R.text('SUDDEN DEATH!', HX + 26, py + 44, { size: 22, color: flash ? '#ffe14a' : '#ff4a4a' });
+        R.text('THE WALLS ARE CLOSING IN  •  LAST STANDING WINS', HX + 26, py + 82, { size: 7, color: '#ffe14a' });
+      }
+    } else if (bomberish) {
       R.text('BOMBER PHASE', HX + 26, py + 12, { size: 18, color: '#ff8a5c' });
       R.text('ボンバータイム', HX + HW - 26, py + 10, { size: 18, jp: true, align: 'right', color: '#ffb0a0' });
       const ps = G.bomber;
@@ -850,7 +894,8 @@
         R.text('TURN', HX + 26, py + 46, { size: 14, color: '#fff' });
         R.text(BC.PLAYER_NAMES[pl.p] + (pl.type === 'CPU' ? ' CPU' : ''), HX + 100, py + 42, { size: 22, color: BC.PLAYER_COLORS[pl.p] });
       }
-      R.text('BOMBER IN', HX + 290, py + 40, { size: 10, color: '#fd8' });
+      const next = BC.nextBattle(G.cfg, G.chessRound);
+      R.text(next ? next.toUpperCase() + ' IN' : 'NEW ROUND IN', HX + 290, py + 40, { size: 10, color: '#fd8' });
       R.text(String(Math.max(0, G.pliesLeft)), HX + 290, py + 56, { size: 22, color: '#ffe14a' });
       R.text('MOVES', HX + 290 + R.measure(String(Math.max(0, G.pliesLeft)) + ' ', 22), py + 64, { size: 10, color: '#fd8' });
       drawTurnClock(G, HX + 26, py + 80, HW - 52);
@@ -865,7 +910,11 @@
     // footer help
     const fy = 616;
     R.panel(HX + 12, fy, HW - 24, 80, { bg: '#100c28', edge: '#3a3480' });
-    if (bomberish) {
+    if (bomberOnly) {
+      R.text('BOMBERS: KEYS ON EACH CARD  PAD: A=BOMB', HX + 24, fy + 12, { size: 8, color: '#ccd' });
+      R.text('POWER-UPS SPAWN RANDOMLY ON THE ARENA', HX + 24, fy + 30, { size: 8, color: '#7ef2ff' });
+      R.text('LAST BOMBER STANDING WINS THE MATCH!', HX + 24, fy + 46, { size: 8, color: '#fc9' });
+    } else if (bomberish) {
       R.text('BOMBERS: KEYS ON EACH CARD  PAD: A=BOMB', HX + 24, fy + 12, { size: 8, color: '#ccd' });
       R.text('PIECES ARE UNBREAKABLE WALLS', HX + 24, fy + 30, { size: 8, color: '#fc9' });
       R.text('GET HIT = LOSE A PAWN   KILL = REVIVE ONE', HX + 24, fy + 46, { size: 8, color: '#fc9' });
@@ -875,7 +924,7 @@
       R.text('CAPTURE A KING = PLAYER OUT', HX + 24, fy + 46, { size: 8, color: '#fc9' });
     }
     R.text('ESC: MENU   M: MUTE' + (BC.Audio.isMuted() ? ' (OFF)' : ''), HX + 24, fy + 62, { size: 8, color: '#889' });
-    if (G.cfg && G.cfg.chain) R.text('CHAINED DEATHS ON', HX + 236, fy + 62, { size: 8, color: '#ff9af0' });
+    if (G.cfg && G.cfg.chain && G.cfg.playChess !== false) R.text('CHAINED DEATHS ON', HX + 236, fy + 62, { size: 8, color: '#ff9af0' });
     drawMenuButton(G);
     if (G.mode === 'net') {
       const N = BC.Net;
@@ -939,8 +988,17 @@
     const tag = pl.type === 'CPU' ? 'CPU' + (brain ? ' ' + brain : '') : (pl.name || 'HUMAN');
     R.text(tag, x + 116, y + 14, { size: 8, color: pl.type === 'CPU' ? '#9cf' : '#fff' });
     if (G.mode === 'net' && G.isMine(pl.p)) R.text('YOU', x + 124 + R.measure(tag, 8), y + 14, { size: 8, color: '#ffe14a' });
-    const pieces = G.chess.occ.filter(q => q && q.o === pl.p).length;
-    R.text('PIECES ' + pieces, x + 70, y + 34, { size: 8, color: '#bbc' });
+    const bomberOnly = !!(G.cfg && BC.isBomberOnly(G.cfg));
+    if (bomberOnly) {
+      R.text(pl.alive ? 'IN PLAY' : 'ELIMINATED', x + 70, y + 34, { size: 8, color: pl.alive ? '#7fe87f' : '#778' });
+    } else {
+      const pieces = G.chess.occ.filter(q => q && q.o === pl.p).length;
+      R.text('PIECES ' + pieces, x + 70, y + 34, { size: 8, color: '#bbc' });
+      if (pl.alive && pl.helmetHits > 0) {
+        const hLeft = Math.max(0, BC.KING_HELMET_HITS - pl.helmetHits);
+        R.text(hLeft ? 'HELMET ' + hLeft : 'NO HELMET!', x + 150, y + 34, { size: 8, color: hLeft ? (hLeft <= 3 ? '#ff8a3c' : '#bff07a') : '#ff4a4a' });
+      }
+    }
 
     let status = '';
     let scol = '#fff';
@@ -948,30 +1006,32 @@
     else if (pl.inCheck && G.phase === 'chess') { status = 'CHECK!'; scol = pulse > 0.5 ? '#ff3030' : '#ffd040'; }
     else if (active) { status = pl.type === 'CPU' ? 'THINKING' : (G.isMine(pl.p) ? 'YOUR MOVE' : 'MOVING'); scol = '#ffe14a'; }
     if (status) R.text(status, x + w - 12, y + 10, { size: 10, align: 'right', color: scol });
-    if (!pl.alive && G.cfg && G.cfg.revive && !G.over) {
-      R.text('WIN A BOMBER ROUND = BACK IN', x + w - 12, y + 23, { size: 7, align: 'right', color: Math.floor(G.time * 2) % 2 ? '#ffe14a' : '#bba', shadow: false });
+    if (!pl.alive && !bomberOnly && G.cfg && G.cfg.revive && !G.over) {
+      R.text('SOLE SURVIVOR = BACK IN', x + w - 12, y + 23, { size: 7, align: 'right', color: Math.floor(G.time * 2) % 2 ? '#ffe14a' : '#bba', shadow: false });
     }
 
-    // stats
-    const A = BC.Assets;
-    const iy = y + h - 26;
-    let ix = x + 70;
-    const stat = (id, v) => {
-      if (A.icons[id]) ctx.drawImage(A.icons[id], ix, iy, 20, 20);
-      R.text('x' + v, ix + 22, iy + 6, { size: 10, color: '#fff' });
-      ix += 58;
-    };
-    stat('bomb', pl.stats.bomb);
-    stat('fire', pl.stats.fire);
-    stat('speed', pl.stats.speed);
-    if (pl.stats.kick) stat('kick', pl.stats.kick);
-    BC.SPECIALS.forEach(sp => {
-      if (!pl.sp[sp]) return;
-      if (A.icons[sp]) ctx.drawImage(A.icons[sp], ix, iy, 20, 20);
-      ix += 24;
-    });
+    // stats (only shown when Bomberman is part of the match)
+    if (!G.cfg || G.cfg.playBomber !== false) {
+      const A = BC.Assets;
+      const iy = y + h - 26;
+      let ix = x + 70;
+      const stat = (id, v) => {
+        if (A.icons[id]) ctx.drawImage(A.icons[id], ix, iy, 20, 20);
+        R.text('x' + v, ix + 22, iy + 6, { size: 10, color: '#fff' });
+        ix += 58;
+      };
+      stat('bomb', pl.stats.bomb);
+      stat('fire', pl.stats.fire);
+      stat('speed', pl.stats.speed);
+      if (pl.stats.kick) stat('kick', pl.stats.kick);
+      BC.SPECIALS.forEach(sp => {
+        if (!pl.sp[sp]) return;
+        if (A.icons[sp]) ctx.drawImage(A.icons[sp], ix, iy, 20, 20);
+        ix += 24;
+      });
+    }
     // knocked-out players still play the bomber rounds, so they keep seeing their keys
-    if (pl.type === 'HUMAN' && G.isMine(pl.p)) {
+    if ((!G.cfg || G.cfg.playBomber !== false) && pl.type === 'HUMAN' && G.isMine(pl.p)) {
       const s = BC.Input.SCHEMES[G.localIdx(pl.p)];
       if (s) R.text(s.label, x + w - 12, y + 32, { size: 7, align: 'right', color: '#8a8ab0', shadow: false });
     }
@@ -1050,15 +1110,24 @@
     if (img) ctx.drawImage(img, r.x + 16, r.y + 16, 40, 40);
     R.text(pu.name, r.x + 70, r.y + 18, { size: 14, color: '#fff' });
     R.text(pu.jp, r.x + r.w - 16, r.y + 14, { size: 16, jp: true, align: 'right', color: '#9cf' });
+    const bomberOnly = !!(G.cfg && BC.isBomberOnly(G.cfg));
     const max = BC.STAT_MAX[pu.id];
-    const keep = pu.id === 'kick' ? BC.KICKS + ' KICKS EACH, KEPT UNTIL USED' : max ? 'KEPT FOR THE WHOLE GAME (UP TO ' + max + ')' : 'LASTS FOR THE NEXT BOMBER ROUND';
+    const keep = pu.id === 'kick' ? BC.KICKS + ' KICKS EACH, KEPT UNTIL USED'
+      : max ? 'KEPT FOR THE WHOLE GAME (UP TO ' + max + ')'
+      : bomberOnly ? (pu.id === 'flamepass' ? 'SOAKS ONE BLAST' : pu.id === 'mystery' ? '12s INVINCIBILITY' : 'KEPT FOR THE WHOLE MATCH')
+      : 'LASTS FOR THE NEXT BOMBER ROUND';
     R.text(keep, r.x + 70, r.y + 42, { size: 8, color: max || pu.id === 'kick' ? '#7fd8ff' : '#ffb040' });
     pu.info.forEach((line, i) => R.text(line, r.x + 16, r.y + 74 + i * 16, { size: 8, color: '#ddd' }));
     const fy = r.y + r.h - 46;
     ctx.fillStyle = 'rgba(255,255,255,0.08)';
     ctx.fillRect(r.x + 12, fy - 8, r.w - 24, 1);
-    R.text('GRAB IT IN THE CHESS PHASE: MOVE A PIECE', r.x + 16, fy, { size: 7, color: '#9cc' });
-    R.text('ONTO IT, OR SLIDE ACROSS IT.', r.x + 16, fy + 12, { size: 7, color: '#9cc' });
+    if (bomberOnly) {
+      R.text('SPAWNS RANDOMLY ON THE ARENA:', r.x + 16, fy, { size: 7, color: '#9cc' });
+      R.text('WALK OVER IT TO COLLECT IT!', r.x + 16, fy + 12, { size: 7, color: '#9cc' });
+    } else {
+      R.text('GRAB IT IN THE CHESS PHASE: MOVE A PIECE', r.x + 16, fy, { size: 7, color: '#9cc' });
+      R.text('ONTO IT, OR SLIDE ACROSS IT.', r.x + 16, fy + 12, { size: 7, color: '#9cc' });
+    }
     R.text('CLICK TO CLOSE', r.x + r.w - 14, fy + 26, { size: 7, align: 'right', color: '#778', shadow: false });
   }
 
@@ -1343,6 +1412,11 @@
 
   // ------------------------------------------------------------- game draw
   R.drawGame = function (G) {
+    if (G.phase === 'worms' && G.worms) {
+      BC.WormsView.draw(G);
+      drawMenuButton(G);
+      return;
+    }
     ctx.fillStyle = '#07051a';
     ctx.fillRect(0, 0, BC.W, BC.H);
     R.backdrop(G.time, G.boardMode === 'bomber');
@@ -1354,15 +1428,21 @@
     drawCells(G);
     if (GR) GR.drawGround(G);
     const chessView = G.boardMode === 'chess' && !G.flip;
+    const hasBomber = !G.cfg || G.cfg.playBomber !== false;
     if (chessView) {
       drawChessMarks(G);
-      drawPowerups(G);
+      if (hasBomber) drawPowerups(G);
     }
     const SX = BC.SpecialFx;
     if (G.special && SX) SX.drawUnder(G);
     const ps = G.bomber;
     const bomberView = ps && G.boardMode === 'bomber';
-    if (bomberView) { drawWalls(G, ps); drawBombs(G, ps); drawFlames(G, ps); }
+    if (bomberView) {
+      drawWalls(G, ps);
+      if (ps.standalone) drawPowerups(G);
+      drawBombs(G, ps);
+      drawFlames(G, ps);
+    }
     // everything standing on the board, back to front
     const items = P ? P.gateItems(G) : [];
     if (chessView) sheepItems(G, items);
@@ -1387,8 +1467,10 @@
     drawTurnPlate(G);
     if (P) P.drawSign(G);
     drawHUD(G);
-    drawPowerColumn(G);
-    drawPowerInfo(G);
+    if (hasBomber) {
+      drawPowerColumn(G);
+      drawPowerInfo(G);
+    }
     R.banner(G);
     R.turnBanner(G);
     R.yourTurn(G);

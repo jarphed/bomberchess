@@ -15,11 +15,19 @@
     const lb = N.lobby;
     const out = [{ id: 'name' }];
     if (!lb) return out.concat([{ id: 'leave' }]);
-    out.push({ id: 'n' });
+    const m = BC.modeSettings(lb);
+    out.push({ id: 'n' }, { id: 'modes' });
     for (let i = 0; i < lb.n; i++) out.push({ id: 'seat', i });
-    out.push({ id: 'moves' }, { id: 'time' }, { id: 'turn' }, { id: 'brain' }, { id: 'power' }, { id: 'chain' }, { id: 'gates' });
-    if (lb.gates) out.push({ id: 'gateRound' });
-    out.push({ id: 'revive' }, { id: 'blood' });
+    if (m.playChess && (m.playBomber || m.playWorms)) out.push({ id: 'moves' });
+    if (m.playBomber) out.push({ id: 'time' });
+    if (m.playChess) out.push({ id: 'turn' });
+    out.push({ id: 'brain' });
+    if (m.playBomber) out.push({ id: 'power' });
+    if (m.playChess) {
+      out.push({ id: 'chain' }, { id: 'gates' });
+      if (lb.gates) out.push({ id: 'gateRound' });
+      if (m.playBomber || m.playWorms) out.push({ id: 'revive' });
+    }
     out.push({ id: 'start' }, { id: 'leave' });
     return out;
   }
@@ -51,7 +59,6 @@
     else if (row.id === 'gates') N.send({ k: 'cfg', gates: !lb.gates });
     else if (row.id === 'gateRound') N.send({ k: 'cfg', gateRound: BC.gateRoundOf(gateOf(lb) + d) });
     else if (row.id === 'revive') N.send({ k: 'cfg', revive: !lb.revive });
-    else if (row.id === 'blood') N.send({ k: 'cfg', blood: !lb.blood });
     else return;
     A.play('menuMove');
   }
@@ -73,7 +80,6 @@
       case 'gates': return lb.gates ? 'ON' : 'OFF';
       case 'gateRound': return String(gateOf(lb));
       case 'revive': return lb.revive ? 'ON' : 'OFF';
-      case 'blood': return lb.blood ? 'ON' : 'OFF';
     }
     return null;
   }
@@ -103,6 +109,10 @@
   }
 
   function activate(G, row) {
+    if (row.id === 'modes') {
+      if (isHost() && !N.lobby.inGame) BC.Screens.openModes(G);
+      return;
+    }
     if (row.id === 'leave') { A.play('menuSelect'); G.leaveLan(); return; }
     if (row.id === 'start') {
       if (N.lobby && N.lobby.inGame) { A.play('menuSelect'); N.send({ k: 'watch' }); }
@@ -131,6 +141,17 @@
     A.music('title');
     const list = rows();
     G.menuIdx = u.clamp(G.menuIdx, 0, list.length - 1);
+    if (G.modePicker) {
+      const lb = N.lobby;
+      if (!isHost() || lb.inGame || N.status !== 'online') G.modePicker = null;
+      else BC.Screens.updateModes(G, ROW_X, ROW_Y0 + 2 * rowStep(list.length) + PANEL_H, ROW_W, key => {
+        const cur = BC.modeSettings(lb);
+        if (cur[key] && (cur.playChess + cur.playBomber + cur.playWorms <= 1)) return false;
+        lb[key] = !cur[key];
+        N.send({ k: 'cfg', [key]: lb[key] });
+      });
+      return;
+    }
     if (Lb.typing(G)) {
       typeName();
       if (I.hit('ArrowDown', 'Enter', 'Tab', 'NumpadEnter')) { G.menuIdx = 1; A.play('menuMove'); }
@@ -156,7 +177,7 @@
       const r = list[hit];
       const lvl = sliderAt(r.id, mx);
       if (lvl >= 0) { G.dragSlider = isHost() ? r.id : null; setLevel(r.id, lvl); }
-      else if (['n', 'moves', 'time', 'turn', 'brain', 'power', 'chain', 'gates', 'gateRound', 'revive', 'blood'].includes(r.id)) adjust(r, clickDir(r, mx));
+      else if (['n', 'moves', 'time', 'turn', 'brain', 'power', 'chain', 'gates', 'gateRound', 'revive'].includes(r.id)) adjust(r, clickDir(r, mx));
       else if (r.id !== 'name') activate(G, r);
     }
   };
@@ -180,6 +201,7 @@
       const host = isHost();
       const val = (txt, col, adj) => R.text(adj ? '< ' + txt + ' >' : txt, VAL_X, y + 9, { size: VAL_SIZE, align: 'right', color: col || '#fff' });
       switch (r.id) {
+        case 'modes': BC.Screens.drawModeRow(lb, ROW_X, y, ROW_W, host && !lb.inGame); break;
         case 'name': {
           R.text('NAME', ROW_X + 16, y + 10, { size: 13 });
           const cursor = sel && blink(t, 3) ? '_' : ' ';
@@ -189,7 +211,7 @@
         }
         case 'n':
           R.text('PLAYERS', ROW_X + 16, y + 10, { size: 13 });
-          R.text(BC.BOARD_LABEL[lb.n].name, ROW_X + 150, y + 13, { size: 9, color: '#9cf' });
+          if (!BC.isWormsOnly(lb)) R.text(BC.BOARD_LABEL[lb.n].name, ROW_X + 150, y + 13, { size: 9, color: '#9cf' });
           val(valText(r), '#ffe14a', host);
           break;
         case 'seat': {
@@ -212,7 +234,7 @@
           val(valText(r), '#fff', host);
           break;
         case 'time':
-          R.text('BOMBER TIME', ROW_X + 16, y + 10, { size: 13 });
+          R.text(BC.isBomberOnly(lb) ? 'WALLS CLOSE AFTER' : 'BOMBER TIME', ROW_X + 16, y + 10, { size: 13 });
           val(valText(r), '#fff', host);
           break;
         case 'turn':
@@ -243,13 +265,8 @@
           break;
         case 'revive':
           R.text('PLAYERS CAN REVIVE', ROW_X + 16, y + 10, { size: 13 });
-          if (sel) R.text('OUT? WIN A BOMBER ROUND', ROW_X + 270, y + 13, { size: 7, color: '#99a' });
+          if (sel) R.text('OUT? BE THE SOLE SURVIVOR', ROW_X + 270, y + 13, { size: 7, color: '#99a' });
           val(valText(r), lb.revive ? '#ffe14a' : '#889', host);
-          break;
-        case 'blood':
-          R.text('BLOOD', ROW_X + 16, y + 10, { size: 13, color: lb.blood ? '#ff5a5a' : '#fff' });
-          if (sel) R.text('GORE FOR SHEEP AND BOMBERS', ROW_X + 110, y + 13, { size: 7, color: '#99a' });
-          val(valText(r), lb.blood ? '#ff3d3d' : '#889', host);
           break;
         case 'start': {
           const humans = lb.seats.slice(0, lb.n).filter(s => s.type === 'HUMAN').length;
@@ -264,6 +281,7 @@
       }
     });
 
+    if (lb) BC.Screens.drawModes(G, lb, ROW_X, ROW_Y0 + 2 * step + PANEL_H, ROW_W);
     // invite + people
     const px = 730, py = 34, pw = 510;
     R.panel(px, py, pw, 250, { bg: '#100c28', edge: '#4a3fa0' });

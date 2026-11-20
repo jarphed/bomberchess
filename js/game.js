@@ -8,9 +8,9 @@
   const G = {
     screen: 'loading', time: 0, mode: 'local', S: null,
     settings: {
-      n: 2, types: ['HUMAN', 'CPU', 'CPU', 'CPU', 'CPU'], moves: 10, bomberTime: 45, brain: BC.BRAIN_DEFAULT,
-      turnTime: BC.TURN_TIME.def, chain: false, gates: false, gateRound: BC.GATE_ROUND.def, powerLevel: BC.POWER_DEFAULT,
-      revive: false, blood: false,
+      n: 4, types: ['HUMAN', 'CPU', 'CPU', 'CPU', 'CPU'], moves: 10, bomberTime: 45, brain: BC.BRAIN_DEFAULT, ...BC.modeSettings(),
+      turnTime: BC.TURN_TIME.def, chain: true, gates: true, gateRound: BC.GATE_ROUND.def, powerLevel: BC.POWER_DEFAULT,
+      revive: true,
     },
     board: null, chess: null, players: [], cfg: null,
     phase: 'chess', boardMode: 'chess', flip: null,
@@ -117,6 +117,7 @@
         case 'shake': G.shake = Math.min(14, Math.max(G.shake, ev.v)); break;
         case 'shatter': if (c) shatterPiece(ev.c, { t: ev.t, o: ev.o }, ev.txt, ev.st); break;
         case 'spx': if (BC.SpecialFx) BC.SpecialFx.event(G, ev, c); break;
+        case 'wb': if (BC.WormsView) BC.WormsView.blood(G, ev); break;
         case 'sheepIn':
         case 'sheepHop': if (c && BC.Pasture) BC.Pasture.event(G, ev); break;
       }
@@ -128,17 +129,19 @@
     const S = G.S;
     G.board = S.board; G.chess = S.chess; G.players = S.players; G.cfg = S.settings;
     G.phase = S.phase; G.turn = S.turn; G.pliesLeft = S.pliesLeft; G.moveAnim = S.moveAnim; G.special = S.special;
-    G.bomber = S.bomber; G.pawnLoss = S.pawnLoss; G.pawnGain = S.pawnGain || []; G.transT = S.transT;
+    G.bomber = S.bomber; G.worms = S.worms; G.pawnLoss = S.pawnLoss; G.pawnGain = S.pawnGain || []; G.transT = S.transT;
     G.chessRound = S.chessRound || 0;
   }
 
   function attach(S, mode) {
+    G.modePicker = null;
     G.S = S;
     G.mode = mode;
     N.watching = mode === 'net';
-    R.layout(S.board, !!S.settings.gates);
+    R.layout(S.board, !!(S.settings.gates && S.settings.playChess));
     Object.assign(G, {
-      boardMode: S.phase === 'bomber' || S.phase === 'toChess' ? 'bomber' : 'chess', flip: null,
+      boardMode: (S.phase === 'bomber' || BC.isBomberOnly(S.settings)) ? 'bomber' : 'chess', flip: null,
+      wormInputKey: '', wormUiClick: !!(I.mouse.down || I.mouse.clicked),
       selected: -1, selId: 0, legal: [], banner: null, bannerQueue: [], particles: [], popups: [], fx: [],
       shake: 0, flash: null, paused: false, over: null, screen: 'play', lastPhase: S.phase, netIn: {}, moveLock: 0,
       turnBanner: null, turnKey: '', puInfo: null, pasture: BC.Pasture ? BC.Pasture.fresh() : null,
@@ -151,16 +154,22 @@
 
   function onPhase(prev, next) {
     // blood and body parts stay for the round, and are gone once the board flips
-    if ((next === 'toBomber' || next === 'toChess') && BC.Gore) BC.Gore.fadeOut(G);
+    if ((next === 'toBomber' || next === 'toWorms' || next === 'toChess') && BC.Gore) BC.Gore.fadeOut(G);
     if (next === 'toBomber') {
       G.flip = { t0: G.time + 0.5, from: 'chess', to: 'bomber' };
       G.selected = -1; G.legal = [];
       A.music(null);
+    } else if (next === 'toWorms') {
+      clearSelection(); G.turnBanner = null; G.puInfo = null;
+      A.music(null);
+    } else if (next === 'worms') {
+      G.wormInputKey = ''; G.wormUiClick = !!(I.mouse.down || I.mouse.clicked); G.puInfo = null; G.turnBanner = null;
+      A.music('bomber');
     } else if (next === 'bomber') {
       G.flip = null; G.boardMode = 'bomber'; N.snaps = [];
       A.music('bomber');
     } else if (next === 'toChess') {
-      G.flip = { t0: G.time + 0.5, from: 'bomber', to: 'chess' };
+      G.flip = prev === 'bomber' ? { t0: G.time + 0.5, from: 'bomber', to: 'chess' } : null;
       A.music(null);
     } else if (next === 'pawnLoss') {
       G.flip = null; G.boardMode = 'chess';
@@ -190,8 +199,8 @@
     const types = s.types.slice(0, s.n);
     const names = types.map(t => (t === 'HUMAN' ? 'P' + (++h) : 'CPU'));
     const L = BC.Logic.create({
-      n: s.n, moves: s.moves, bomberTime: s.bomberTime, brain: s.brain, turnTime: s.turnTime, chain: s.chain, gates: s.gates,
-      gateRound: s.gateRound, powerLevel: s.powerLevel, revive: s.revive, blood: s.blood, types, names,
+      n: s.n, moves: s.moves, bomberTime: s.bomberTime, brain: s.brain, turnTime: s.turnTime, chain: s.chain, gates: s.gates, ...BC.modeSettings(s),
+      gateRound: s.gateRound, powerLevel: s.powerLevel, revive: s.revive, types, names,
     });
     attach(L, 'local');
     handleEvents(L.events);
@@ -230,15 +239,22 @@
 
   // in-game menu (ESC or the MENU button)
   G.menuItems = function () {
+    const musicRow = {
+      id: 'music',
+      label: 'MUSIC: ' + (A.isMusicMuted() ? 'OFF' : 'ON'),
+      sub: 'SOUND EFFECTS STAY ON',
+    };
     if (G.mode !== 'net') {
       return [
         { id: 'resume', label: 'RESUME' },
+        musicRow,
         { id: 'title', label: 'QUIT GAME', sub: 'BACK TO THE TITLE SCREEN' },
       ];
     }
     const seated = G.mySeats.length > 0;
     const items = [
       { id: 'resume', label: 'BACK TO GAME' },
+      musicRow,
       { id: 'leave', label: seated ? 'LEAVE GAME' : 'STOP WATCHING', sub: seated ? 'A CPU TAKES OVER YOUR SEAT' : 'BACK TO THE LOBBY' },
     ];
     if (N.lobby && N.lobby.host === N.token) items.push({ id: 'end', label: 'END GAME FOR ALL', sub: 'EVERYONE GOES BACK TO THE LOBBY' });
@@ -247,6 +263,12 @@
   };
 
   function menuAction(id) {
+    A.init();
+    if (id === 'music') {
+      A.toggleMusic();
+      A.play('menuMove');
+      return;
+    }
     A.play('menuSelect');
     switch (id) {
       case 'resume': G.paused = false; break;
@@ -277,7 +299,8 @@
     });
     if (hit >= 0 && I.mouse.moved) G.pauseIdx = hit;
     if (I.hit('KeyQ')) { menuAction(G.mode === 'net' ? 'leave' : 'title'); return; }
-    if (m.ok) menuAction(items[G.pauseIdx].id);
+    if ((m.left || m.right) && items[G.pauseIdx] && items[G.pauseIdx].id === 'music') menuAction('music');
+    else if (m.ok) menuAction(items[G.pauseIdx].id);
     else if (I.mouse.clicked && hit >= 0) menuAction(items[hit].id);
   }
 
@@ -360,12 +383,52 @@
     return out;
   }
 
+  function wormsInputs(release) {
+    const w = G.worms, p = w.active;
+    if (!G.isMine(p) || G.players[p].type !== 'HUMAN') return {};
+    if (release) {
+      if (G.mode === 'net') {
+        G.wormInputKey = '';
+        N.send({ k: 'wi', s: p, round: G.chessRound, turn: w.turnNo, dx: 0, dy: 0, charge: false });
+      }
+      return {};
+    }
+    const raw = I.worms(G.localIdx(p));
+    const unit = w.units.find(u => u.p === p);
+    let select = '';
+    if (I.mouse.clicked && BC.WormsView) {
+      const wAt = BC.WormsView.weaponAt(I.mouse.x, I.mouse.y);
+      if (wAt) {
+        G.wormUiClick = true;
+        if (unit && w.phase === 'aim') select = wAt;
+      }
+    }
+    if (!select && unit && w.phase === 'aim') {
+      const avail = BC.Worms.available(unit);
+      if (raw.slot >= 1 && raw.slot <= avail.length) select = avail[raw.slot - 1];
+    }
+    const charge = G.wormUiClick ? raw.padCharge : raw.charge;
+    const inp = { dx: raw.dx, dy: raw.dy, jump: raw.jump, cycle: raw.cycle, wheel: raw.wheel, select, charge };
+    if (G.mode === 'local') return { [p]: inp };
+    const key = [w.turnNo, p, inp.dx, inp.dy, inp.charge].join(',');
+    if (key !== G.wormInputKey || inp.jump || inp.cycle || inp.wheel || inp.select) {
+      G.wormInputKey = key;
+      N.send({ k: 'wi', s: p, round: G.chessRound, turn: w.turnNo, ...inp });
+    }
+    return {};
+  }
+
   // between server snapshots keep timers running so animation stays smooth
   function advanceMirror(dt) {
     const S = G.S;
     // the lost pieces' strikes hold the clock of the phase they go off in
     if (!(S.phase === 'pawnLoss' && S.special)) S.transT += dt;
     if (S.phase === 'chess' && !S.moveAnim && !S.special) S.turnLeft = Math.max(0, S.turnLeft - dt);
+    if (S.worms) {
+      if (S.worms.phase === 'aim') S.worms.timeLeft = Math.max(0, S.worms.timeLeft - dt);
+      if (S.worms.retreat > 0) S.worms.retreat = Math.max(0, S.worms.retreat - dt);
+      if (S.worms.weaponCue > 0) S.worms.weaponCue = Math.max(0, S.worms.weaponCue - dt);
+    }
     if (S.moveAnim) S.moveAnim.t = Math.min(S.moveAnim.dur, S.moveAnim.t + dt);
     if (S.special) S.special.t = Math.min(S.special.dur, S.special.t + dt);
     const ps = S.bomber;
@@ -423,6 +486,7 @@
 
   // the power-up column: click an icon for its info card, click anywhere else to close it again
   function powerColumnInput() {
+    if (G.cfg && G.cfg.playBomber === false) { G.puInfo = null; return; }
     if (!I.mouse.clicked) return;
     const id = R.powerupAt(I.mouse.x, I.mouse.y);
     if (id) { G.puInfo = G.puInfo === id ? null : id; A.play('menuMove'); } else G.puInfo = null;
@@ -431,6 +495,7 @@
   // let go of any held direction on the server (menu opened, tab hidden)
   function releaseNetInputs() {
     if (G.mode !== 'net') return;
+    if (G.phase === 'worms' && G.worms) wormsInputs(true);
     Object.keys(G.netIn).forEach(s => {
       const st = G.netIn[s];
       st.dx = 0; st.dy = 0; st.sent = '';
@@ -448,13 +513,15 @@
     if (G.paused && G.mode === 'local') return;
     // the click or key that worked the menu (or skipped the YOUR TURN banner) must not also reach the board
     const busy = G.paused || menuWasOpen || onBtn || (!G.paused && skipYourTurn());
+    if (!I.mouse.down && !I.mouse.clicked) G.wormUiClick = false;
+    else if (busy) G.wormUiClick = true;
 
     tickBanner(dt);
     G.moveLock -= dt;
 
-    if (!busy) powerColumnInput();
+    if (!busy && G.phase !== 'worms') powerColumnInput();
     if (G.phase === 'chess' && !busy) { refreshSelection(); chessInput(); } else G.hover = -1;
-    const inputs = G.phase === 'bomber' && !busy ? bomberInputs() : {};
+    const inputs = busy ? {} : G.phase === 'bomber' ? bomberInputs() : G.phase === 'worms' ? wormsInputs(false) : {};
 
     if (G.mode === 'local') {
       G.S.update(dt, inputs);

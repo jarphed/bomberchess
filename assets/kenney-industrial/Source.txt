@@ -1,0 +1,10 @@
+Pixel Platformer: Industrial Expansion (1.0), by Kenney
+https://kenney.nl/assets/pixel-platformer-industrial-expansion
+
+Source: Kenney's OpenGameArt release
+https://opengameart.org/content/pixel-platformer-industrial-expansion
+https://opengameart.org/sites/default/files/kenney_pixelplatformerindustrialexpansion.zip
+
+tilemap_packed.png is the unmodified Tilemap/tilemap_packed.png from the archive:
+16 columns x 7 rows, 18 x 18 pixels per tile, no spacing.
+The author's License.txt accompanies the art (CC0 1.0).

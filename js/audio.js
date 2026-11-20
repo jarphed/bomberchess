@@ -9,6 +9,7 @@ window.BC = window.BC || {};
   var LOOKAHEAD = 0.1;
   var TICK_MS = 25;
   var STORAGE_KEY = 'bomberchess.muted';
+  var MUSIC_STORAGE_KEY = 'bomberchess.musicMuted';
   var SEMITONE = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
 
   var ctx = null;
@@ -18,25 +19,26 @@ window.BC = window.BC || {};
   var noiseBuf = null;
   var waves = {};
   var current = null;
-  var muted = loadMuted();
+  var muted = loadFlag(STORAGE_KEY);
+  var musicMuted = loadFlag(MUSIC_STORAGE_KEY);
 
   function has(obj, key) {
     return Object.prototype.hasOwnProperty.call(obj, key);
   }
 
-  function loadMuted() {
+  function loadFlag(key) {
     try {
-      return window.localStorage.getItem(STORAGE_KEY) === '1';
+      return window.localStorage.getItem(key) === '1';
     } catch (e) {
       return false;
     }
   }
 
-  function storeMuted(flag) {
+  function storeFlag(key, flag) {
     try {
-      window.localStorage.setItem(STORAGE_KEY, flag ? '1' : '0');
+      window.localStorage.setItem(key, flag ? '1' : '0');
     } catch (e) {
-      // Storage may be blocked (file:// in some browsers); mute state stays in memory.
+      // Storage may be blocked (file:// in some browsers); state stays in memory.
     }
   }
 
@@ -79,7 +81,7 @@ window.BC = window.BC || {};
     sfxBus.gain.value = SFX_GAIN;
     sfxBus.connect(master);
     musicBus = ctx.createGain();
-    musicBus.gain.value = MUSIC_GAIN;
+    musicBus.gain.value = musicMuted ? 0 : MUSIC_GAIN;
     musicBus.connect(master);
     noiseBuf = makeNoise();
     waves.p25 = pulseWave(0.25);
@@ -167,6 +169,88 @@ window.BC = window.BC || {};
 
   function hat(bus, t) {
     hit(bus, t, 0.035, 0.22, 'highpass', 7000);
+  }
+
+  // Synthesize one choral SATB syllable through parallel vocal formant filters.
+  function choirSyllable(bus, t, dur, notes, f1, f2, f3, vol, opts) {
+    opts = opts || {};
+    var env = ctx.createGain();
+    var atk = Math.min(0.032, dur * 0.25);
+    var rel = Math.min(0.065, dur * 0.3);
+    env.gain.setValueAtTime(0.0001, t);
+    env.gain.exponentialRampToValueAtTime(vol, t + atk);
+    env.gain.setValueAtTime(vol, t + dur - rel);
+    env.gain.linearRampToValueAtTime(0.0001, t + dur);
+    env.connect(bus);
+
+    var sum = ctx.createGain();
+    sum.gain.value = 1 / Math.max(1, notes.length);
+    var specs = [
+      [f1, opts.f1To, 4.5, 1.0],
+      [f2, opts.f2To, 5.5, 0.72],
+      [f3, null, 6.5, 0.3],
+    ];
+    var nodes = [env, sum];
+    specs.forEach(function (sp) {
+      var flt = ctx.createBiquadFilter();
+      flt.type = 'bandpass';
+      flt.Q.value = sp[2];
+      flt.frequency.setValueAtTime(sp[0], t);
+      if (sp[1]) flt.frequency.exponentialRampToValueAtTime(sp[1], t + Math.min(0.07, dur * 0.4));
+      var fg = ctx.createGain();
+      fg.gain.value = sp[3];
+      sum.connect(flt);
+      flt.connect(fg);
+      fg.connect(env);
+      nodes.push(flt, fg);
+    });
+
+    if (opts.breath) {
+      hit(bus, t, 0.04, vol * 0.28, 'bandpass', 1750);
+    }
+
+    var warm = ctx.createGain();
+    warm.gain.value = 0.22 / Math.max(1, notes.length);
+    warm.connect(env);
+    nodes.push(warm);
+
+    var left = 0;
+    function done() {
+      if (--left > 0) return;
+      for (var k = 0; k < nodes.length; k++) {
+        try { nodes[k].disconnect(); } catch (e) {}
+      }
+    }
+
+    notes.forEach(function (name) {
+      var baseF = freqOf(name);
+      if (!baseF) return;
+      [-6, 6].forEach(function (cents) {
+        var osc = ctx.createOscillator();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(baseF, t);
+        osc.detune.setValueAtTime(cents, t);
+        if (opts.vib) {
+          for (var s = 2; s <= 28; s++) {
+            var p = s / 28;
+            osc.detune.setValueAtTime(cents + Math.sin(p * 19) * 11, t + dur * p);
+          }
+        }
+        osc.connect(sum);
+        left++;
+        osc.onended = function () { osc.disconnect(); done(); };
+        osc.start(t);
+        osc.stop(t + dur + 0.02);
+      });
+      var sub = ctx.createOscillator();
+      sub.type = 'triangle';
+      sub.frequency.setValueAtTime(baseF, t);
+      sub.connect(warm);
+      left++;
+      sub.onended = function () { sub.disconnect(); done(); };
+      sub.start(t);
+      sub.stop(t + dur + 0.02);
+    });
   }
 
   var DRUMS = { k: kick, s: snare, h: hat };
@@ -286,6 +370,12 @@ window.BC = window.BC || {};
       hit(bus, t, 0.12, 0.9, 'highpass', 1800);
       tone(bus, 'square', 320, t, 0.18, 0.35, { to: 70, decay: true });
     },
+    shotgun: function (bus, t) {
+      hit(bus, t, 0.06, 1.0, 'highpass', 2200);
+      hit(bus, t, 0.26, 0.95, 'lowpass', 2800, 220);
+      tone(bus, 'sine', 165, t, 0.18, 0.85, { to: 42, decay: true });
+      hit(bus, t + 0.18, 0.07, 0.32, 'bandpass', 1900, 1100);
+    },
     crash: function (bus, t) {
       hit(bus, t, 0.9, 1, 'lowpass', 1800, 120);
       hit(bus, t + 0.05, 0.5, 0.5, 'bandpass', 900, 300);
@@ -335,6 +425,15 @@ window.BC = window.BC || {};
       tone(bus, 'square', 1480, t, 0.35, 0.22, { decay: true });
       tone(bus, 'triangle', 2217, t, 0.5, 0.3, { decay: true });
       tone(bus, 'triangle', 987, t + 0.02, 0.4, 0.25, { to: 940, decay: true });
+    },
+    // Holy Hand Grenade angelic choir singing "HAL - LE - LU - JAH!"
+    hallelujah: function (bus, t) {
+      choirSyllable(bus, t, 0.17, ['D3', 'A3', 'F#4', 'D5'], 780, 1220, 2650, 0.95, { breath: true });
+      choirSyllable(bus, t + 0.18, 0.14, ['E3', 'A3', 'E4', 'C#5'], 530, 1840, 2550, 0.9);
+      choirSyllable(bus, t + 0.33, 0.20, ['F#3', 'B3', 'F#4', 'D5'], 330, 840, 2400, 0.95);
+      choirSyllable(bus, t + 0.54, 0.58, ['D3', 'A3', 'F#4', 'A4', 'D5', 'F#5'], 320, 2050, 2750, 1.15, {
+        f1To: 820, f2To: 1240, vib: true
+      });
     }
   };
 
@@ -547,7 +646,7 @@ window.BC = window.BC || {};
 
   function setMuted(flag) {
     muted = !!flag;
-    storeMuted(muted);
+    storeFlag(STORAGE_KEY, muted);
     if (master) master.gain.setTargetAtTime(muted ? 0 : MASTER_GAIN, ctx.currentTime, 0.03);
   }
 
@@ -560,12 +659,30 @@ window.BC = window.BC || {};
     return muted;
   }
 
+  function setMusicMuted(flag) {
+    musicMuted = !!flag;
+    storeFlag(MUSIC_STORAGE_KEY, musicMuted);
+    if (musicBus) musicBus.gain.setTargetAtTime(musicMuted ? 0 : MUSIC_GAIN, ctx.currentTime, 0.03);
+  }
+
+  function isMusicMuted() {
+    return musicMuted;
+  }
+
+  function toggleMusic() {
+    setMusicMuted(!musicMuted);
+    return musicMuted;
+  }
+
   window.BC.Audio = {
     init: init,
     play: play,
     music: music,
     setMuted: setMuted,
     isMuted: isMuted,
-    toggleMute: toggleMute
+    toggleMute: toggleMute,
+    setMusicMuted: setMusicMuted,
+    isMusicMuted: isMusicMuted,
+    toggleMusic: toggleMusic
   };
 })();

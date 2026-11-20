@@ -3,7 +3,7 @@
   // Compact wire format for game state (server -> clients). Chess data is only sent when it changes.
   const BC = window.BC = window.BC || {};
 
-  const PT = ['K', 'Q', 'R', 'B', 'N', 'P'];
+  const PT = ['K', 'Q', 'R', 'B', 'N', 'P', 'W'];
   const FACE = ['down', 'up', 'left', 'right'];
   const PU = BC.POWERUPS.map(p => p.id);
   const r3 = v => Math.round(v * 1000) / 1000;
@@ -15,6 +15,12 @@
     if (L.special) s.sp = Object.assign({}, L.special, { t: r3(L.special.t) });
     if (L.pawnLoss.length) s.lo = L.pawnLoss.map(l => [l.p, l.cell, l.id, l.boomed ? 1 : 0]);
     if (L.pawnGain.length) s.lg = L.pawnGain.map(g => [g.p, g.cell, g.done ? 1 : 0, g.t === 'K' ? 1 : 0]);
+    if (L.worms) {
+      // Base polygons only on entry/reconnect; each live frame includes the cumulative crater list.
+      const { terrain, ...frame } = L.worms;
+      s.wo = frame;
+      if (withChess) frame.terrain = terrain;
+    }
     if (withChess) {
       const occ = [];
       L.chess.occ.forEach((q, i) => { if (q) occ.push(i, PT.indexOf(q.t), q.o, q.id, q.moved ? 1 : 0); });
@@ -28,7 +34,7 @@
         p: L.players.map(p => [
           p.type === 'HUMAN' ? 1 : 0, p.name, p.alive ? 1 : 0, p.inCheck ? 1 : 0, p.outReason, p.place,
           p.stats.bomb, p.stats.fire, p.stats.speed,
-          BC.SPECIALS.reduce((m, k, i) => m | (p.sp[k] ? 1 << i : 0), 0), p.stats.kick,
+          BC.SPECIALS.reduce((m, k, i) => m | (p.sp[k] ? 1 << i : 0), 0), p.stats.kick, p.helmetHits || 0,
         ]),
       };
     }
@@ -56,19 +62,19 @@
     const board = BC.Board.create(cfg.n);
     const M = {
       settings: {
-        n: cfg.n, moves: cfg.moves, bomberTime: cfg.bomberTime, brain: cfg.brain === undefined ? BC.BRAIN_DEFAULT : cfg.brain,
+        n: cfg.n, moves: cfg.moves, bomberTime: cfg.bomberTime, brain: cfg.brain === undefined ? BC.BRAIN_DEFAULT : cfg.brain, ...BC.modeSettings(cfg),
         turnTime: BC.turnTimeOf(cfg.turnTime), chain: !!cfg.chain, gates: !!cfg.gates,
         gateRound: BC.gateRoundOf(cfg.gateRound), powerLevel: BC.powerLevelOf(cfg.powerLevel),
-        revive: !!cfg.revive, blood: !!cfg.blood,
+        revive: !!cfg.revive,
       },
       board, chess: { occ: new Array(board.cells.length).fill(null), powerups: new Map(), sheep: new Map(), roam: new Set(), lastMove: null },
-      players: [], phase: 'chess', turn: 0, pliesLeft: 0, moveAnim: null, special: null, bomber: null,
+      players: [], phase: 'chess', turn: 0, pliesLeft: 0, moveAnim: null, special: null, bomber: null, worms: null,
       pawnLoss: [], pawnGain: [], transT: 0, over: null, rev: -1, turnLeft: 0, chessRound: 0,
     };
     for (let p = 0; p < cfg.n; p++) {
       M.players.push({
         p, type: cfg.types[p], name: cfg.names[p] || '', alive: true, inCheck: false, outReason: '', place: 0,
-        stats: { bomb: 1, fire: 2, speed: 0, kick: 0 }, sp: {},
+        helmetHits: 0, stats: { bomb: 1, fire: 2, speed: 0, kick: 0 }, sp: {},
       });
     }
     M.alive = () => M.players.map(p => p.alive);
@@ -79,6 +85,7 @@
   function apply(M, s) {
     M.phase = s.ph; M.turn = s.tu; M.pliesLeft = s.pl; M.transT = s.tr; M.rev = s.rev; M.turnLeft = s.tl || 0;
     M.over = s.ov || null;
+    M.worms = s.wo ? Object.assign(M.worms || {}, s.wo) : null;
     M.moveAnim = s.ma ? { id: s.ma[0], from: s.ma[1], to: s.ma[2], t: s.ma[3], dur: 0.24 } : null;
     M.special = s.sp || null;
     M.pawnLoss = (s.lo || []).map(l => ({ p: l[0], cell: l[1], id: l[2], boomed: !!l[3] }));
@@ -100,17 +107,20 @@
         p.type = a[0] ? 'HUMAN' : 'CPU'; p.name = a[1]; p.alive = !!a[2]; p.inCheck = !!a[3];
         p.outReason = a[4]; p.place = a[5];
         p.stats.bomb = a[6]; p.stats.fire = a[7]; p.stats.speed = a[8]; p.stats.kick = a[10] || 0;
+        p.helmetHits = a[11] || 0;
         BC.SPECIALS.forEach((k, j) => { p.sp[k] = !!(a[9] & (1 << j)); });
       });
     }
     if (s.bo) {
+      const standalone = !!(BC.isBomberOnly && BC.isBomberOnly(M.settings));
       const ps = M.bomber || (M.bomber = { bombers: [], bombs: [], explosions: [], flames: new Map() });
-      ps.clock = s.bo.ck; ps.ready = s.bo.rd; ps.round = s.bo.rn;
+      ps.clock = s.bo.ck; ps.ready = s.bo.rd; ps.round = s.bo.rn; ps.standalone = standalone;
       // the closing walls are planned the same way as on the server
-      if (ps.planned !== s.bo.rn + ':' + s.bo.du) {
-        ps.planned = s.bo.rn + ':' + s.bo.du;
+      const planKey = s.bo.rn + ':' + s.bo.du + ':' + Number(standalone);
+      if (ps.planned !== planKey) {
+        ps.planned = planKey;
         ps.dur = s.bo.du;
-        Object.assign(ps, BC.Bomber.shrinkPlan(M.board, ps.round || 1, ps.dur));
+        Object.assign(ps, BC.Bomber.shrinkPlan(M.board, ps.round || 1, ps.dur, standalone));
       }
       ps.bombers = s.bo.b.map(a => ({
         p: a[0], from: a[1], to: a[2], t: a[3], face: FACE[a[4]], anim: a[5],

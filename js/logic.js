@@ -9,15 +9,15 @@
     const Ch = BC.Chess;
     const L = {
       settings: {
-        n: cfg.n, moves: cfg.moves, bomberTime: cfg.bomberTime,
+        n: cfg.n, moves: cfg.moves, bomberTime: cfg.bomberTime, ...BC.modeSettings(cfg),
         brain: u.clamp(cfg.brain === undefined ? BC.BRAIN_DEFAULT : cfg.brain | 0, 0, BC.BRAINS.length - 1),
         turnTime: BC.turnTimeOf(cfg.turnTime), chain: !!cfg.chain, gates: !!cfg.gates,
         gateRound: BC.gateRoundOf(cfg.gateRound), powerLevel: BC.powerLevelOf(cfg.powerLevel),
-        revive: !!cfg.revive, blood: !!cfg.blood,
+        revive: !!cfg.revive,
       },
       board: BC.Board.create(cfg.n),
       chess: null, players: [],
-      phase: 'chess', turn: 0, pliesLeft: 0, moveAnim: null, special: null, bomber: null,
+      phase: 'chess', turn: 0, pliesLeft: 0, moveAnim: null, special: null, bomber: null, worms: null,
       pawnLoss: [], pawnGain: [], transT: 0, over: null, time: 0, cpuTimer: 0, hold: 0, bomberRound: 0, turnLeft: 0,
       chessRound: 0, events: [], rev: 0,
     };
@@ -34,7 +34,7 @@
     for (let p = 0; p < cfg.n; p++) {
       L.players.push({
         p, type: cfg.types[p], name: (cfg.names && cfg.names[p]) || '', alive: true, inCheck: false,
-        outReason: '', place: 0, stats: { bomb: 1, fire: 2, speed: 0, kick: 0 },
+        outReason: '', place: 0, helmetHits: 0, stats: { bomb: 1, fire: 2, speed: 0, kick: 0 },
         sp: { xbomb: false, walker: false, bombpass: false, flamepass: false, mystery: false },
       });
     }
@@ -57,10 +57,40 @@
 
     function spawnPowerups() {
       const st = L.chess;
+      if (!L.settings.playBomber) { st.powerups.clear(); return; }
       const k = BC.POWER_LEVELS[L.settings.powerLevel].k;
       const target = Math.round(Math.max(4, L.board.cells.length / 18) * k);
       const free = u.shuffle(L.board.cells.filter(c => !st.occ[c.id] && !st.powerups.has(c.id) && !st.sheep.has(c.id)).map(c => c.id));
       while (st.powerups.size < target && free.length) st.powerups.set(free.pop(), u.weighted(BC.POWERUPS).id);
+    }
+
+    const wormsOnly = BC.isWormsOnly(L.settings);
+    const bomberOnly = BC.isBomberOnly(L.settings);
+
+    function resumePlay(first) {
+      if (L.settings.playChess) { startChessPhase(first); return; }
+      if (wormsOnly) {
+        L.chess.occ.fill(null);
+        L.chess.powerups.clear();
+        L.worms = BC.Worms.create(L);
+        L.phase = 'worms';
+        if (first) banner('WORMS START!', 'ワーム スタート', { color: '#bff07a', dur: 1.8, force: true });
+        snd('phaseBomber');
+        touch();
+        return;
+      }
+      if (bomberOnly) {
+        BC.Bomber.setupArena(L.board, L.chess.occ);
+        L.chess.powerups.clear();
+        L.bomberRound = 1;
+        L.bomber = BC.Bomber.create(L);
+        L.phase = 'bomber';
+        if (first) banner('BOMBER START!', 'ボンバー スタート', { color: '#ff7a3c', dur: 1.8, force: true });
+        snd('phaseBomber');
+        touch();
+        return;
+      }
+      beginBattle();
     }
 
     function startChessPhase(first) {
@@ -243,7 +273,7 @@
       touch();
       if (checkGameOver()) return;
       L.turn = nextAlive(L.turn);
-      if (L.pliesLeft <= 0) beginBomber(); else startTurn();
+      if (L.pliesLeft <= 0) beginBattle(); else startTurn();
     }
 
     function startSpecial(cap, cell, capturerId, after) {
@@ -297,17 +327,41 @@
       if (sp.t >= sp.dur) {
         L.special = null;
         spRun = null;
+        if (checkGameOver()) { spQueue = []; spAfter = null; return; }
         nextStrike();
       }
     }
 
-    // Victims of a strike just die. Kings are never struck, so a strike can't knock anyone out of the game.
-    // With CHAINED DEATHS on, a victim with a strike of its own (knight, bishop, rook, queen) sets it off next.
+    // Victims of a strike die, except kings wearing a helmet: a king's helmet absorbs up to BC.KING_HELMET_HITS
+    // hits before shattering, and any strike hit after that destroys the unhelmeted king and eliminates the player.
+    // With CHAINED DEATHS on, a victim with a strike of its own sets it off next.
     function strikePiece(h, kind) {
       if (h.sheep !== undefined) { strikeSheep(h, kind); return; }
       const pc = L.chess.occ[h.c];
-      if (!pc || pc.id !== h.id || pc.t === 'K') return;
+      if (!pc || pc.id !== h.id) return;
       const info = BC.Specials.INFO[kind];
+      if (pc.t === 'K') {
+        const pl = pc.o >= 0 ? L.players[pc.o] : null;
+        const maxH = BC.KING_HELMET_HITS;
+        const hits = pl ? pl.helmetHits || 0 : maxH;
+        if (pl && hits < maxH) {
+          pl.helmetHits = hits + 1;
+          const broken = pl.helmetHits >= maxH;
+          snd(broken ? 'crack' : 'clang');
+          emit({ e: 'spx', f: 'clang', c: h.c, o: pc.o, hits: pl.helmetHits, broken });
+          touch();
+          return;
+        }
+        L.chess.occ[h.c] = null;
+        emit({ e: 'shatter', c: h.c, t: 'K', o: pc.o, txt: h.boom ? 'KABOOM!' : info.kill, st: info.st, k: kind });
+        if (pl && pl.alive) {
+          eliminate(pc.o, info.out || 'STRUCK');
+          banner(BC.PLAYER_NAMES[pc.o] + ' KING DOWN!', BC.PLAYER_NAMES[pc.o] + ' アウト', { small: true, color: '#ff5a5a', dur: 1.6 });
+        }
+        if (L.settings.chain) spQueue.push({ k: 'K', cell: h.c, o: pc.o, by: -1, chain: true });
+        touch();
+        return;
+      }
       L.chess.occ[h.c] = null;
       emit({ e: 'shatter', c: h.c, t: pc.t, o: pc.o, txt: h.boom ? 'KABOOM!' : info.kill, st: info.st, k: kind });
       if (L.settings.chain && BC.Specials.KINDS.includes(pc.t)) spQueue.push({ k: pc.t, cell: h.c, o: pc.o, by: -1, chain: true });
@@ -364,10 +418,15 @@
       touch();
     }
 
-    function beginBomber() {
-      L.phase = 'toBomber';
+    function beginBattle() {
+      if (!L.settings.playChess) L.chessRound++;
+      const next = BC.nextBattle(L.settings, L.chessRound);
+      if (!next) { startChessPhase(false); return; }
+      const worms = next === 'worms';
+      L.phase = worms ? 'toWorms' : 'toBomber';
       L.transT = 0;
-      banner('BOMBER TIME!!', 'ボンバータイム', { color: '#ff7a3c', dur: 2.4, force: true });
+      if (worms) banner('WORMS TIME!', 'ワームタイム', { color: '#bff07a', dur: 2.2, force: true });
+      else banner('BOMBER TIME!!', 'ボンバータイム', { color: '#ff7a3c', dur: 2.4, force: true });
       snd('phaseBomber');
       touch();
     }
@@ -445,25 +504,23 @@
       taken.add(cell);
       // everyone knocked out after this player moves one place down
       L.players.forEach(q => { if (!q.alive && q !== pl && q.place < pl.place) q.place++; });
-      Object.assign(pl, { alive: true, inCheck: false, outReason: '', place: 0 });
+      Object.assign(pl, { alive: true, inCheck: false, outReason: '', place: 0, helmetHits: 0 });
       L.pawnGain.push({ p: pl.p, cell, t: 'K', done: false });
     }
 
-    function endBomber(ps) {
+    function endBattle(standing, hits, kills) {
       L.phase = 'toChess';
       L.transT = 0;
-      L.bomber = null;
+      L.worms = L.bomber = null;
       L.pawnLoss = [];
       L.pawnGain = [];
       const taken = new Set();
-      // the winner of the bomber round (the last one standing) comes back if it was out of the chess game
       if (L.settings.revive) {
-        const standing = ps.bombers.filter(b => b.alive && !b.dying);
-        const w = standing.length === 1 ? L.players[standing[0].p] : null;
+        const w = standing.length === 1 ? L.players[standing[0]] : null;
         if (w && !w.alive) revive(w, taken);
       }
       // every kill brings back one of the killer's lost pawns; players already out of the chess game get none
-      ps.kills.forEach(k => {
+      kills.forEach(k => {
         if (!L.players[k.by].alive) return;
         const lost = (startPawns[k.by] || 0) - pawnsOf(k.by).length - L.pawnGain.filter(g => g.p === k.by && g.t === 'P').length;
         if (lost <= 0) return;
@@ -479,7 +536,7 @@
       // A player down to the bare king is out. Pieces already picked are lifted off the board meanwhile, so the
       // next player is judged on what's left.
       const lifted = [];
-      ps.hits.forEach(p => {
+      hits.forEach(p => {
         if (!L.players[p].alive) return;
         const pawns = pawnsOf(p);
         const others = piecesOf(p, q => q.t !== 'P' && q.t !== 'K');
@@ -496,9 +553,13 @@
         L.chess.occ[cell] = null;
       });
       lifted.forEach(([cell, pc]) => { L.chess.occ[cell] = pc; });
-      L.players.forEach(pl => { BC.SPECIALS.forEach(k => { pl.sp[k] = false; }); });
-      banner('CHESS TIME', 'チェスタイム', { color: '#7fd8ff', dur: 2.4, force: true });
-      snd('phaseChess');
+      if (L.settings.playChess) {
+        banner('CHESS TIME', 'チェスタイム', { color: '#7fd8ff', dur: 2.4, force: true });
+        snd('phaseChess');
+      } else {
+        const next = BC.nextBattle(L.settings, L.chessRound + 1);
+        banner(next === 'worms' ? 'BOARD UPDATE' : 'ROUND RESULTS', 'ボードチェック', { color: '#ffe14a', dur: 1.8, force: true });
+      }
       touch();
     }
 
@@ -509,10 +570,50 @@
       snd('alarm');
     };
 
+    function finishStandalone(standing, deathOrder, winReason, defaultOut) {
+      const winner = standing.length === 1 ? standing[0] : -1;
+      const seen = new Set();
+      const ordered = [];
+      (deathOrder || []).forEach(d => {
+        if (d.p !== winner && !seen.has(d.p)) { seen.add(d.p); ordered.push(d); }
+      });
+      L.players.forEach(pl => {
+        if (pl.p !== winner && !seen.has(pl.p)) { seen.add(pl.p); ordered.push({ p: pl.p }); }
+      });
+      const n = L.players.length;
+      ordered.forEach((d, idx) => {
+        const pl = L.players[d.p];
+        pl.alive = false;
+        pl.inCheck = false;
+        pl.outReason = d.crushed ? 'CRUSHED' : d.drowned ? 'DROWNED' : defaultOut;
+        pl.place = Math.max(winner >= 0 ? 2 : 1, n - idx);
+      });
+      if (winner >= 0) {
+        L.players[winner].alive = true;
+        L.players[winner].outReason = '';
+      }
+      gameOver(winner, winner >= 0 ? winReason : 'DRAW');
+    }
+
     L.onBomberHit = function (p, by, crushed) {
       const N = BC.PLAYER_NAMES;
       const killer = by >= 0 && by !== p ? L.players[by] : null;
       const text = killer ? N[by] + ' GOT ' + N[p] + '!' : N[p] + (crushed ? ' CRUSHED!' : ' HIT!');
+      if (bomberOnly) {
+        const pl = L.players[p];
+        if (pl && pl.alive) {
+          pl.alive = false;
+          pl.outReason = crushed ? 'CRUSHED' : killer ? 'BOMBED' : 'SELF-BOMBED';
+          pl.place = L.aliveCount() + 1;
+          touch();
+        }
+        banner(text, 'ダウン!', { small: true, color: '#ff5a5a', dur: 1.5, force: true });
+        if (killer) {
+          const kb = L.bomber.bombers.find(b => b.p === by);
+          if (kb) popup(BC.Bomber.occCell(kb), 'KO!', BC.PLAYER_COLORS[by]);
+        }
+        return;
+      }
       banner(text, L.players[p].alive ? 'ポーンを失う!' : 'ダウン!', { small: true, color: '#ff5a5a', dur: 1.5, force: true });
       if (!killer || !killer.alive) return;
       const kb = L.bomber.bombers.find(b => b.p === by);
@@ -564,6 +665,24 @@
             cpuThink = null;
           }
         }
+      } else if (L.phase === 'toWorms') {
+        L.transT += dt;
+        if (L.transT > 2.2) {
+          L.worms = BC.Worms.create(L);
+          L.phase = 'worms';
+          touch();
+        }
+      } else if (L.phase === 'worms') {
+        const w = L.worms;
+        if (BC.Worms.update(L, w, dt, inputs[w.active] || {})) {
+          const standing = w.units.filter(b => b.hp > 0).map(b => b.p);
+          if (wormsOnly) {
+            finishStandalone(standing, w.deathOrder, 'LAST WORM STANDING', 'BLOWN UP');
+          } else {
+            endBattle(standing, w.units.filter(b => b.hp <= 0).map(b => b.p),
+              w.kills.filter(k => k.by >= 0 && k.by !== k.victim));
+          }
+        }
       } else if (L.phase === 'toBomber') {
         L.transT += dt;
         if (L.transT > 2.2) {
@@ -580,10 +699,17 @@
           inp[b.p] = L.players[b.p].type === 'HUMAN' ? (inputs[b.p] || {}) : BC.AI.bomberInput(L, ps, b, dt);
         });
         BC.Bomber.update(L, ps, dt, inp);
-        // the round runs its full time, unless at most one bomber is left standing: then it's straight back to chess
         const dying = ps.bombers.some(b => b.alive && b.dying);
-        const standing = ps.bombers.filter(b => b.alive && !b.dying).length;
-        if (!dying && (ps.clock >= ps.dur || standing <= 1)) endBomber(ps);
+        const standing = ps.bombers.filter(b => b.alive && !b.dying);
+        if (bomberOnly) {
+          if (!dying && standing.length <= 1) {
+            finishStandalone(standing.map(b => b.p), ps.deathOrder, 'LAST MAN STANDING', 'BOMBED');
+          }
+        } else if (!dying && (ps.clock >= ps.dur || standing.length <= 1)) {
+          // the round runs its full time, unless at most one bomber is left standing: then it's straight back to chess
+          L.players.forEach(pl => { BC.SPECIALS.forEach(k => { pl.sp[k] = false; }); });
+          endBattle(standing.map(b => b.p), ps.hits, ps.kills);
+        }
       } else if (L.phase === 'toChess') {
         L.transT += dt;
         if (L.transT > 2.2) {
@@ -592,7 +718,7 @@
             L.transT = 0;
             touch();
           } else if (!checkGameOver()) {
-            startChessPhase(false);
+            resumePlay(false);
           }
         }
       } else if (L.phase === 'pawnLoss') {
@@ -628,7 +754,10 @@
           }
           L.chess.occ[g.cell] = { t, o: g.p, moved: false, id: L.chess.uid++ };
           const pu = L.chess.powerups.get(g.cell);
-          if (pu) { L.chess.powerups.delete(g.cell); grantPowerup(g.p, pu, g.cell); }
+          if (pu) {
+            L.chess.powerups.delete(g.cell);
+            if (L.settings.playBomber) grantPowerup(g.p, pu, g.cell);
+          }
           burst(g.cell, ['#fff', '#ffe14a', '#7ef2ff', BC.PLAYER_COLORS[g.p]], t === 'K' ? 50 : 30, 180, 3);
           popup(g.cell, t === 'K' ? 'KING REVIVED!' : 'PAWN REVIVED!', BC.PLAYER_COLORS[g.p]);
           if (t === 'K') banner(BC.PLAYER_NAMES[g.p] + ' IS BACK!', 'ふっかつ!', { color: BC.PLAYER_COLORS[g.p], dur: 2 });
@@ -638,12 +767,12 @@
         if (L.transT > 2.6) {
           L.pawnLoss = [];
           L.pawnGain = [];
-          if (!checkGameOver()) startChessPhase(false);
+          if (!checkGameOver()) resumePlay(false);
         }
       }
     };
 
-    startChessPhase(true);
+    resumePlay(true);
     return L;
   }
 

@@ -4,7 +4,7 @@
 const path = require('path');
 
 global.window = { addEventListener() {} };
-for (const f of ['core', 'board', 'chess', 'specials', 'bomber', 'ai', 'logic', 'snap']) require(path.join(__dirname, '..', 'js', f + '.js'));
+for (const f of ['core', 'board', 'chess', 'specials', 'bomber', 'worms', 'ai', 'logic', 'snap']) require(path.join(__dirname, '..', 'js', f + '.js'));
 const BC = global.window.BC;
 
 const GAMES = Number(process.argv[2]) || 4;
@@ -32,7 +32,10 @@ for (const n of [2, 3, 4, 5]) {
         res.slowest = Math.max(res.slowest, ms);
         L.events.forEach(e => {
           if (e.e === 'shatter' && e.k) res.strikeKills++;
-          if (e.e === 'shatter' && e.k && e.t === 'K') res.errors.push('a strike killed a king');
+          if (e.e === 'shatter' && e.k && e.t === 'K') {
+            const pl = e.o >= 0 ? L.players[e.o] : null;
+            if (pl && pl.helmetHits < BC.KING_HELMET_HITS) res.errors.push('a strike killed a king before its helmet broke');
+          }
           const tag = e.e === 'banner' && / GOT /.test(e.text) ? 'kill'
             : e.e === 'banner' && / HIT!$/.test(e.text) ? 'selfHit'
             : e.e === 'popup' && e.text === 'PAWN REVIVED!' ? 'revived'

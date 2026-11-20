@@ -15,7 +15,7 @@ const MAX_CLIENTS = 24;
 const SLOW_CLIENT_BYTES = 512 * 1024;
 
 global.window = { addEventListener() {} };
-for (const f of ['core', 'board', 'chess', 'specials', 'bomber', 'ai', 'logic', 'snap']) require(path.join(ROOT, 'js', f + '.js'));
+for (const f of ['core', 'board', 'chess', 'specials', 'bomber', 'worms', 'ai', 'logic', 'snap']) require(path.join(ROOT, 'js', f + '.js'));
 const BC = global.window.BC;
 
 // ------------------------------------------------------------------ static files
@@ -115,8 +115,8 @@ function parseFrames(ws) {
 const clients = new Map(); // token -> client
 let nextId = 1;
 const lobby = {
-  n: 2, moves: 10, bomberTime: 45, brain: BC.BRAIN_DEFAULT, turnTime: BC.TURN_TIME.def, chain: false, gates: false,
-  gateRound: BC.GATE_ROUND.def, powerLevel: BC.POWER_DEFAULT, revive: false, blood: false,
+  n: 4, moves: 10, bomberTime: 45, brain: BC.BRAIN_DEFAULT, turnTime: BC.TURN_TIME.def, chain: true, gates: true, ...BC.modeSettings(),
+  gateRound: BC.GATE_ROUND.def, powerLevel: BC.POWER_DEFAULT, revive: true,
   seats: [0, 1, 2, 3, 4].map(i => ({ type: i < 2 ? 'OPEN' : 'CPU', owner: null })),
 };
 let hostToken = null;
@@ -135,9 +135,9 @@ function lanUrls() {
 
 function lobbyMsg() {
   return JSON.stringify({
-    k: 'lobby', n: lobby.n, moves: lobby.moves, bomberTime: lobby.bomberTime, brain: lobby.brain,
+    k: 'lobby', n: lobby.n, moves: lobby.moves, bomberTime: lobby.bomberTime, brain: lobby.brain, ...BC.modeSettings(lobby),
     turnTime: lobby.turnTime, chain: lobby.chain, gates: lobby.gates, gateRound: lobby.gateRound, powerLevel: lobby.powerLevel,
-    revive: lobby.revive, blood: lobby.blood,
+    revive: lobby.revive,
     host: hostToken,
     inGame: !!game, urls: lanUrls(),
     seats: lobby.seats.map(s => ({
@@ -175,8 +175,8 @@ function startGame() {
   const types = seats.map(s => (s.type === 'HUMAN' && s.owner && online(s.owner) ? 'HUMAN' : 'CPU'));
   const names = seats.map(s => (s.type === 'HUMAN' && s.owner && clients.get(s.owner) ? clients.get(s.owner).name : 'CPU'));
   const cfg = {
-    n, moves: lobby.moves, bomberTime: lobby.bomberTime, brain: lobby.brain, turnTime: lobby.turnTime, chain: lobby.chain,
-    gates: lobby.gates, gateRound: lobby.gateRound, powerLevel: lobby.powerLevel, revive: lobby.revive, blood: lobby.blood, types, names,
+    n, moves: lobby.moves, bomberTime: lobby.bomberTime, brain: lobby.brain, turnTime: lobby.turnTime, chain: lobby.chain, ...BC.modeSettings(lobby),
+    gates: lobby.gates, gateRound: lobby.gateRound, powerLevel: lobby.powerLevel, revive: lobby.revive, types, names,
   };
   const L = BC.Logic.create(cfg);
   game = { L, cfg, inputs: {}, sentRev: -1, overAt: 0, tick: 0 };
@@ -271,13 +271,19 @@ function handle(c, msg) {
         lobby.seats.forEach((s, i) => { if (i >= lobby.n && s.owner) { s.owner = null; s.type = 'CPU'; } });
       }
       if (Number.isInteger(m.moves)) lobby.moves = Math.max(2, Math.min(30, m.moves));
+      if (typeof m.playChess === 'boolean' || typeof m.playBomber === 'boolean' || typeof m.playWorms === 'boolean') {
+        const next = Object.assign({}, BC.modeSettings(lobby));
+        if (typeof m.playChess === 'boolean') next.playChess = m.playChess;
+        if (typeof m.playBomber === 'boolean') next.playBomber = m.playBomber;
+        if (typeof m.playWorms === 'boolean') next.playWorms = m.playWorms;
+        if (next.playChess || next.playBomber || next.playWorms) Object.assign(lobby, next);
+      }
       if (Number.isInteger(m.bomberTime)) lobby.bomberTime = Math.max(15, Math.min(120, m.bomberTime));
       if (Number.isInteger(m.brain)) lobby.brain = Math.max(0, Math.min(BC.BRAINS.length - 1, m.brain));
       if (Number.isInteger(m.turnTime)) lobby.turnTime = BC.turnTimeOf(m.turnTime);
       if (typeof m.chain === 'boolean') lobby.chain = m.chain;
       if (typeof m.gates === 'boolean') lobby.gates = m.gates;
       if (typeof m.revive === 'boolean') lobby.revive = m.revive;
-      if (typeof m.blood === 'boolean') lobby.blood = m.blood;
       if (Number.isInteger(m.gateRound)) lobby.gateRound = BC.gateRoundOf(m.gateRound);
       if (Number.isInteger(m.powerLevel)) lobby.powerLevel = BC.powerLevelOf(m.powerLevel);
       pushLobby();
@@ -287,6 +293,21 @@ function handle(c, msg) {
     case 'abort': if (isHost && game) { console.log(`${c.name} ended the game`); endGame(); } break;
     case 'quit': leaveGame(c); pushLobby(); break;
     case 'watch': if (game && !c.inGame) joinGame(c); break;
+    case 'wi': {
+      if (!game || !seatOf(c, m.s)) return;
+      const L = game.L, w = L.worms;
+      if (!w || w.active !== m.s || w.turnNo !== m.turn || L.chessRound !== m.round) return;
+      const cur = game.wormInput || (game.wormInput = {});
+      cur.dx = Math.sign(Number(m.dx) || 0);
+      cur.dy = Math.sign(Number(m.dy) || 0);
+      cur.jump ||= m.jump === true;
+      cur.cycle ||= m.cycle === true;
+      if (m.wheel) cur.wheel = Math.sign(Number(m.wheel) || 0);
+      if (typeof m.select === 'string' && m.select.length < 16) cur.select = m.select;
+      cur.charge = m.charge === true;
+      cur.chargePress ||= cur.charge;
+      break;
+    }
     case 'in': {
       if (!game || !seatOf(c, m.s)) return;
       const cur = game.inputs[m.s] || (game.inputs[m.s] = { dx: 0, dy: 0, bs: 0, lbs: null });
@@ -365,10 +386,17 @@ function step(dt) {
     inputs[k] = { dx: s.dx, dy: s.dy, bomb: s.bs !== s.lbs };
     s.lbs = s.bs;
   });
+  const w = L.worms, turn = w && w.turnNo;
+  if (w) {
+    const i = game.wormInput;
+    inputs[w.active] = i ? { ...i, charge: i.charge || i.chargePress } : {};
+    if (i) { i.jump = i.cycle = i.chargePress = false; i.select = ''; i.wheel = 0; }
+  }
   L.update(dt, inputs);
+  if (w && (!L.worms || w.turnNo !== turn || L.players[w.active].type !== 'HUMAN')) game.wormInput = null;
   game.tick++;
   const live = L.phase === 'bomber';
-  if (live || L.events.length || L.rev !== game.sentRev || game.tick % 6 === 0) sendState(false);
+  if (live || (L.worms && game.tick % 2 === 0) || L.events.length || L.rev !== game.sentRev || game.tick % 6 === 0) sendState(false);
   if (L.over && !game.overAt) game.overAt = Date.now() + 15000;
   if (game.overAt && Date.now() > game.overAt) endGame();
 }

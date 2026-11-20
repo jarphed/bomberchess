@@ -618,8 +618,8 @@
   }
 
   // ------------------------------------------------------------------- kings' helmets
-  // Kings can't be hurt by a strike. While a tower, airstrike or nuke comes down they pop a helmet on,
-  // and anything that lands on them just clangs off it.
+  // Kings put on a helmet whenever a strike runs. Each king's helmet absorbs up to BC.KING_HELMET_HITS hits,
+  // getting more dented and cracked with every hit until it shatters completely on the 10th hit.
   const clangs = new Map(); // cell -> G.time of the last clang, for the wobble
 
   function drawStar(ctx, x, y, r, col) {
@@ -633,30 +633,79 @@
     ctx.fill();
   }
 
-  X.drawHelmet = function (G, cell, x, y) {
+  X.drawHelmet = function (G, cell, x, y, hits) {
     const sp = G.special;
-    if (!sp) return;
+    if (!sp || hits >= BC.KING_HELMET_HITS) return;
     const ctx = R.ctx, s = 14 * G.board.pieceScale;
     const on = span(sp.t, 0.05, 0.4), off = span(sp.t, sp.dur - 0.35, sp.dur);
     if (on <= 0 || off >= 1) return;
+    const dmg = u.clamp((hits || 0) / BC.KING_HELMET_HITS, 0, 1);
     const drop = (1 - u.easeOutBack(on)) * s * 1.3 + easeIn(off) * s * 0.9;
     const since = G.time - (clangs.get(cell) || -9);
     const wob = since < 0.5 ? Math.sin(since * 45) * 0.35 * (1 - since / 0.5) : 0;
+    const tilt = (hits >= 3 ? (hits % 2 ? 1 : -1) * dmg * 0.16 : 0) + wob;
     ctx.save();
     ctx.globalAlpha = Math.min(1, on * 3) * (1 - off);
     ctx.translate(x, y - s * 0.22 - drop);
-    ctx.rotate(wob);
-    const rx = s * 0.42, ry = s * 0.4;
+    ctx.rotate(tilt);
+    const rx = s * 0.42, ry = s * 0.4 * (1 - dmg * 0.14);
     ctx.fillStyle = INK;
     ctx.beginPath(); ctx.ellipse(0, 0, rx + 2, ry + 2, 0, Math.PI, TAU); ctx.fill();
     ctx.beginPath(); ctx.ellipse(0, s * 0.02, s * 0.52 + 2, s * 0.09 + 2, 0, 0, TAU); ctx.fill();
-    ctx.fillStyle = '#5f7032';
+    ctx.fillStyle = mix('#5f7032', '#4a4338', dmg * 0.75);
     ctx.beginPath(); ctx.ellipse(0, 0, rx, ry, 0, Math.PI, TAU); ctx.fill();
-    ctx.fillStyle = '#8ea24c';
-    ctx.beginPath(); ctx.ellipse(-rx * 0.35, -ry * 0.55, rx * 0.28, ry * 0.18, -0.5, 0, TAU); ctx.fill();
-    ctx.fillStyle = '#47561f';
+    if (hits < 8) {
+      ctx.fillStyle = mix('#8ea24c', '#6d6658', dmg);
+      ctx.beginPath(); ctx.ellipse(-rx * 0.35, -ry * 0.55, rx * 0.28 * (1 - dmg * 0.4), ry * 0.18, -0.5, 0, TAU); ctx.fill();
+    }
+    // dark scorch/dent patches as hits mount
+    if (hits >= 2) {
+      ctx.fillStyle = 'rgba(20,12,28,0.42)';
+      ctx.beginPath(); ctx.ellipse(rx * 0.38, -ry * 0.48, rx * 0.22, ry * 0.16, 0.4, 0, TAU); ctx.fill();
+    }
+    if (hits >= 5) {
+      ctx.fillStyle = 'rgba(20,12,28,0.5)';
+      ctx.beginPath(); ctx.ellipse(-rx * 0.42, -ry * 0.32, rx * 0.24, ry * 0.17, -0.35, 0, TAU); ctx.fill();
+    }
+    ctx.fillStyle = mix('#47561f', '#38322a', dmg * 0.8);
     ctx.beginPath(); ctx.ellipse(0, s * 0.02, s * 0.52, s * 0.09, 0, 0, TAU); ctx.fill();
-    drawStar(ctx, 0, -ry * 0.45, s * 0.1, '#ffe14a');
+    // star emblem fades/chips away after heavy hits
+    if (hits < 7) {
+      drawStar(ctx, 0, -ry * 0.45, s * 0.1 * (hits >= 4 ? 0.8 : 1), hits >= 4 ? '#caa23a' : '#ffe14a');
+    }
+    // progressive cracks and missing rim/crown notches
+    if (hits >= 1) {
+      ctx.strokeStyle = INK;
+      ctx.lineWidth = Math.max(1.5, s * 0.035);
+      ctx.lineJoin = 'bevel';
+      const crack = pts => {
+        ctx.beginPath();
+        pts.forEach(([px, py], i) => (i ? ctx.lineTo(px * rx, py * ry) : ctx.moveTo(px * rx, py * ry)));
+        ctx.stroke();
+      };
+      crack([[0.18, -0.95], [0.06, -0.62], [0.24, -0.36]]);
+      if (hits >= 3) crack([[-0.38, -0.82], [-0.22, -0.5], [-0.44, -0.22]]);
+      if (hits >= 5) crack([[0.24, -0.36], [0.48, -0.18], [0.35, 0.04]]);
+      if (hits >= 7) crack([[-0.05, -0.98], [-0.14, -0.55], [0.08, -0.2], [-0.1, 0.05]]);
+      if (hits >= 9) crack([[-0.68, -0.45], [-0.35, -0.35], [0.05, -0.48], [0.55, -0.3]]);
+    }
+    // chunks chipped out of the rim and dome at higher damage
+    if (hits >= 4) {
+      ctx.fillStyle = INK;
+      ctx.beginPath();
+      ctx.moveTo(rx * 0.55, -ry * 0.78); ctx.lineTo(rx * 0.82, -ry * 0.52); ctx.lineTo(rx * 0.48, -ry * 0.46);
+      ctx.closePath(); ctx.fill();
+    }
+    if (hits >= 6) {
+      ctx.fillStyle = INK;
+      ctx.fillRect(-s * 0.44, -s * 0.03, s * 0.14, s * 0.12);
+    }
+    if (hits >= 8) {
+      ctx.fillStyle = '#c85a32';
+      ctx.fillRect(-rx * 0.12, -ry * 0.72, rx * 0.18, ry * 0.14);
+      ctx.fillStyle = INK;
+      ctx.fillRect(s * 0.24, -s * 0.04, s * 0.16, s * 0.13);
+    }
     ctx.restore();
   };
 
@@ -717,11 +766,11 @@
         const cols = ev.st === 'zap' ? ['#3a3440', '#5a5464', '#9fe8ff', '#fff'] : ev.st === 'vapor' ? ['#3a3438', '#5a5560', '#8a8490'] : ['#fff', '#f4f0e8', '#c4bccf'];
         for (let i = 0; i < 6; i++) puff(c.sx + u.rand(-0.35, 0.35) * cp, c.sy + u.rand(-0.4, 0.1) * cp, cp * 0.3, cols[i % 2], 0.9, cp * 0.35, 0.85);
         G.burst(c.sx, c.sy, cols, 26, 240, 4);
-        if (G.cfg && G.cfg.blood && BC.Gore) BC.Gore.wound(G, c);
+        if (BC.Gore) BC.Gore.wound(G, c);
         break;
       }
       case 'gib': {
-        // a sheep blows up at the end of a chained stampede: a cloud of wool (and with BLOOD on, the rest of it)
+        // a sheep blows up at the end of a chained stampede: a cloud of wool and bloody bits
         if (!c) return;
         const r = cp * (0.6 + (ev.r || 1) * 0.5);
         for (let i = 0; i < 10; i++) {
@@ -732,7 +781,7 @@
         G.fx.push({ type: 'boom', x: c.sx, y: c.sy, t: 0, dur: 0.7, size: cp * 2.2 });
         G.fx.push({ type: 'ring', x: c.sx, y: c.sy, t: 0, dur: 0.55, r, color: '#fff' });
         G.fx.push({ type: 'ring', x: c.sx, y: c.sy, t: -0.08, dur: 0.7, r: r * 1.5, color: '#ff8a1c' });
-        if (G.cfg && G.cfg.blood && BC.Gore) BC.Gore.sheep(G, c);
+        if (BC.Gore) BC.Gore.sheep(G, c);
         break;
       }
       case 'zap': {
@@ -749,9 +798,16 @@
         if (!c) return;
         const hy = c.sy - 14 * G.board.pieceScale * 0.4;
         clangs.set(ev.c, G.time);
-        G.burst(c.sx, hy, ['#fff', '#ffe14a', '#d8d8e0'], 14, 260, 3);
-        G.fx.push({ type: 'ring', x: c.sx, y: hy, t: 0, dur: 0.35, r: cp * 0.8, color: '#ffe14a' });
-        G.popup('CLANG!', c.sx, hy - cp * 0.3, '#ffe14a');
+        if (ev.broken) {
+          G.burst(c.sx, hy, ['#5f7032', '#8ea24c', '#47561f', '#ffe14a', '#fff'], 32, 300, 4);
+          G.fx.push({ type: 'ring', x: c.sx, y: hy, t: 0, dur: 0.45, r: cp * 1.1, color: '#ff5a3c' });
+          G.popup('HELMET BROKE!', c.sx, hy - cp * 0.35, '#ff5a3c', 11);
+        } else {
+          const left = BC.KING_HELMET_HITS - (ev.hits || 1);
+          G.burst(c.sx, hy, ['#fff', '#ffe14a', '#8ea24c', '#d8d8e0'], 16, 260, 3);
+          G.fx.push({ type: 'ring', x: c.sx, y: hy, t: 0, dur: 0.35, r: cp * 0.8, color: '#ffe14a' });
+          G.popup('CLANG! (' + left + ')', c.sx, hy - cp * 0.3, left <= 3 ? '#ff8a3c' : '#ffe14a');
+        }
         break;
       }
       case 'nuke': {

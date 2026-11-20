@@ -10,6 +10,24 @@
   BC.PLAYER_DARK = ['#8a4a00', '#4a1e9a', '#1d6e12', '#11468a', '#8a0f22'];
   BC.PLAYER_NAMES = ['1P', '2P', '3P', '4P', '5P'];
   BC.NEUTRAL_COLOR = '#8c8c94';
+  BC.KING_HELMET_HITS = 10;
+  BC.modeSettings = (cfg = {}) => {
+    let playChess = cfg.playChess !== false, playBomber = cfg.playBomber !== false, playWorms = cfg.playWorms !== false;
+    if (!playChess && !playBomber && !playWorms) playChess = true;
+    return { playChess, playBomber, playWorms };
+  };
+  BC.isWormsOnly = cfg => {
+    const m = BC.modeSettings(cfg);
+    return !m.playChess && !m.playBomber && m.playWorms;
+  };
+  BC.isBomberOnly = cfg => {
+    const m = BC.modeSettings(cfg);
+    return !m.playChess && m.playBomber && !m.playWorms;
+  };
+  BC.nextBattle = (cfg, round) => {
+    if (cfg.playWorms && (!cfg.playBomber || round % 2 === 0)) return 'worms';
+    return cfg.playBomber ? 'bomber' : null;
+  };
 
   BC.PIECE_VAL = { P: 1, N: 3, B: 3, R: 5, Q: 9, K: 100 };
   BC.PIECE_NAMES = { K: 'KING', Q: 'QUEEN', R: 'ROOK', B: 'BISHOP', N: 'KNIGHT', P: 'PAWN' };

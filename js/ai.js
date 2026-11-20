@@ -73,11 +73,15 @@
       st.occ[m.to] = pc; st.occ[m.from] = null;
       if (Ch.promotes(board, pc, m.to)) s += 80;
       Ch.movePath(board, pc, m).concat(m.to).forEach(c => { if (st.powerups.has(c)) s += 7; });
-      // a captured rook's falling tower crushes everything two steps along its lines (kings wear helmets)
+      // a captured rook's falling tower crushes everything two steps along its lines (kings with intact helmets survive)
       if (careful && cap && cap.t === 'R') {
         for (const c of BC.Specials.rookCells(board, m.to)) {
           const q = st.occ[c];
-          if (!q || q.t === 'K') continue;
+          if (!q) continue;
+          if (q.t === 'K') {
+            const pl = q.o >= 0 ? G.players[q.o] : null;
+            if (pl && (pl.helmetHits || 0) < BC.KING_HELMET_HITS) continue;
+          }
           if (q.o === p) s -= VAL[q.t] * 10;
           else if (q.o < 0 || alive[q.o]) s += VAL[q.t] * 10 * (q.o < 0 ? 0.35 : 1);
         }
@@ -167,7 +171,12 @@
         u.crushed = [];
         for (const c of T.rook[m.to]) {
           const q = occ[c];
-          if (q && q.t !== 'K') { u.crushed.push(c, q); occ[c] = null; }
+          if (!q) continue;
+          if (q.t === 'K') {
+            const pl = q.o >= 0 ? G.players[q.o] : null;
+            if (pl && (pl.helmetHits || 0) < BC.KING_HELMET_HITS) continue;
+          }
+          u.crushed.push(c, q); occ[c] = null;
         }
       }
       stack.push(u);
@@ -473,6 +482,17 @@
     if (Math.random() < per(iq.fumble * ai.nerve)) {
       const opts = cells[me].nE.filter(n => enter(n) && !ps.flames.has(n) && (safe(n) || Math.random() < iq.reckless));
       if (opts.length) { ai.route = []; return { moveTo: u.pick(opts) }; }
+    }
+
+    // 4b. grab a nearby safe power-up spawned on the arena (standalone Bomberman)
+    if (ps.standalone && G.chess.powerups && G.chess.powerups.size > 0 && Math.random() < 0.78) {
+      const puScan = bfs(G, me, n => enter(n) && safe(n), 7);
+      let bestPu = -1, bestD = Infinity;
+      G.chess.powerups.forEach((id, cell) => {
+        const d = puScan.dist.get(cell);
+        if (d !== undefined && d > 0 && d < bestD) { bestD = d; bestPu = cell; }
+      });
+      if (bestPu >= 0) return go(routeTo(puScan.prev, me, bestPu));
     }
 
     // 5. hunt: usually whoever is nearest, sometimes whoever it has it in for, keeping its own distance

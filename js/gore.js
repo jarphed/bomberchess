@@ -1,7 +1,7 @@
 (function () {
   'use strict';
-  // BLOOD (a lobby option), client side only. With it on, a sheep that blows up at the end of a chained
-  // stampede and a knocked-out bomber burst into bloody pixel bits, and a sheep caught by a strike bleeds.
+  // Always-on client-side gore. A sheep that blows up at the end of a chained stampede and a knocked-out
+  // bomber burst into bloody pixel bits, and a sheep caught by a strike bleeds.
   // The blood and some of the bits stay for the rest of the round: whatever lands for good is painted onto a
   // ground layer under the pieces, which fades away when the board flips between chess and bomber.
   const BC = window.BC;
@@ -260,7 +260,7 @@
     }
     // knocked-out bombers burst once their hit flash is over (squashed ones straight away)
     const ps = G.bomber;
-    if (ps && G.boardMode === 'bomber' && G.cfg && G.cfg.blood && BC.Assets.ok.sheet) {
+    if (ps && G.boardMode === 'bomber' && BC.Assets.ok.sheet) {
       ps.bombers.forEach(b => {
         if (!b.alive || !b.dying) return;
         const key = (ps.round || 0) + ':' + b.p;

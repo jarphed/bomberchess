@@ -13,8 +13,8 @@
   const u = BC.u;
 
   const KINDS = ['N', 'B', 'R', 'Q', 'K'];
-  // strikes that land on an area: kings put their helmets on for these
-  const HELMET = ['R', 'Q', 'K'];
+  // every strike can hit a king now, so kings always put their helmets on while a strike runs
+  const HELMET = ['N', 'B', 'R', 'Q', 'K', 'S'];
   // name: shout when triggered, hint: shown when aiming a capture, kill: popup on victims, out: elimination reason
   const INFO = {
     R: { name: 'TIMBER!', hint: 'TOWER FALLS', kill: 'CRUSHED!', out: 'CRUSHED', col: '#ffb040', st: '' },
@@ -86,7 +86,7 @@
     while (q.length && goal < 0) {
       const c = q.shift();
       for (const n of u.shuffle(board.cells[c].knight.slice())) {
-        if (from.has(n) || (occ[n] && (occ[n].id === capturerId || occ[n].t === 'K'))) continue;
+        if (from.has(n) || (occ[n] && occ[n].id === capturerId)) continue;
         from.set(n, c);
         if (occ[n] || sheep.has(n)) { goal = n; break; }
         q.push(n);
@@ -162,10 +162,7 @@
         if (sheep.has(c)) hits.push({ at: time, c, sheep: sheep.get(c), boom: blast });
         return;
       }
-      if (q.t !== 'K') { hits.push({ at: time, c, id: q.id, boom: blast }); return; }
-      // kings can't be hurt by a strike: it just bounces off their helmet
-      snd(time, 'clang');
-      spx(time, 'clang', c, { o: q.o });
+      hits.push({ at: time, c, id: q.id, boom: blast });
     };
 
     switch (kind) {
@@ -178,7 +175,11 @@
         spx(ROOK.rise, 'dust', cell);
         snd(land, 'crash');
         at(land, { e: 'shake', v: 12 });
-        v.arms.forEach(a => a[1].forEach(c => { spx(land, 'boom', c, { o: owner, rubble: 1 }); hit(land, c); }));
+        const seen = new Set();
+        v.arms.forEach(a => a[1].forEach(c => {
+          spx(land, 'boom', c, { o: owner, rubble: 1 });
+          if (!seen.has(c)) { seen.add(c); hit(land, c); }
+        }));
         break;
       }
       case 'N':
@@ -227,7 +228,7 @@
       }
       case 'B': {
         const pieces = [...sheep.keys()];
-        occ.forEach((q, i) => { if (q && q.t !== 'K') pieces.push(i); });
+        occ.forEach((q, i) => { if (q) pieces.push(i); });
         const tc = pieces.length ? u.pick(pieces) : cell;
         v.tc = tc; v.strike = BISHOP.strike; v.dur = BISHOP.dur;
         snd(0, 'ascend');

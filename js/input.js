@@ -15,7 +15,7 @@
     SCHEMES,
     keys: new Set(),
     pressed: new Set(),
-    mouse: { x: 0, y: 0, clicked: false, rclicked: false, moved: false, down: false },
+    mouse: { x: 0, y: 0, clicked: false, rclicked: false, moved: false, down: false, wheel: 0 },
     pads: [],
     padPrev: [],
     padPressed: [],
@@ -39,12 +39,33 @@
     canvas.addEventListener('mousemove', e => { pos(e); I.mouse.moved = true; });
     canvas.addEventListener('mousedown', e => {
       pos(e);
-      if (e.button === 2) I.mouse.rclicked = true; else { I.mouse.clicked = true; I.mouse.down = true; }
+      if (e.button === 2) I.mouse.rclicked = true;
+      else if (e.button === 0) { I.mouse.clicked = true; I.mouse.down = true; }
       I.anyInput = true;
     });
-    window.addEventListener('mouseup', e => { if (e.button !== 2) I.mouse.down = false; });
+    window.addEventListener('mouseup', e => { if (e.button === 0) I.mouse.down = false; });
     window.addEventListener('blur', () => { I.mouse.down = false; });
     canvas.addEventListener('contextmenu', e => e.preventDefault());
+    let wheelAcc = 0, wheelAt = 0;
+    window.addEventListener('wheel', e => {
+      e.preventDefault();
+      const d = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+      if (!d) return;
+      const now = performance.now();
+      if (now - wheelAt > 180) {
+        wheelAcc = 0;
+        if (Math.abs(d) >= 4) { I.mouse.wheel += Math.sign(d); I.anyInput = true; }
+        else wheelAcc = d;
+      } else {
+        wheelAcc += d;
+        if (Math.abs(wheelAcc) >= 55) {
+          I.mouse.wheel += Math.sign(wheelAcc);
+          wheelAcc = 0;
+          I.anyInput = true;
+        }
+      }
+      wheelAt = now;
+    }, { passive: false });
   };
 
   I.pollPads = function () {
@@ -67,6 +88,7 @@
     I.mouse.clicked = false;
     I.mouse.rclicked = false;
     I.mouse.moved = false;
+    I.mouse.wheel = 0;
     I.anyInput = false;
   };
 
@@ -105,6 +127,25 @@
       if (pr.has(0) || pr.has(2)) bomb = true;
     }
     return { dx, dy, bomb };
+  };
+
+  // Artillery is hot-seat: everyone can use the same keyboard/mouse on their turn.
+  I.worms = function (k) {
+    const gp = I.pads[k], pr = I.padPressed[k];
+    const [px, py] = padDir(gp);
+    let slot = 0;
+    for (let d = 1; d <= 6; d++) if (hit(['Digit' + d])) { slot = d; break; }
+    const padCharge = !!(gp && gp.buttons[2] && gp.buttons[2].pressed);
+    return {
+      dx: px || Number(down(['KeyD', 'ArrowRight'])) - Number(down(['KeyA', 'ArrowLeft'])),
+      dy: py || Number(down(['KeyS', 'ArrowDown'])) - Number(down(['KeyW', 'ArrowUp'])),
+      jump: hit(['Space']) || !!(pr && pr.has(0)),
+      cycle: hit(['KeyQ']) || !!(pr && pr.has(3)),
+      wheel: Math.sign(I.mouse.wheel),
+      slot,
+      padCharge,
+      charge: I.mouse.down || I.mouse.clicked || padCharge,
+    };
   };
 
   // Menu navigation from any keyboard scheme or pad

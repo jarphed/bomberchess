@@ -38,7 +38,10 @@
   }
 
   A.load = function () {
-    const jobs = [loadImage('sheet', 'assets/bomb-party/complete_v4.png')];
+    const jobs = [
+      loadImage('sheet', 'assets/bomb-party/complete_v4.png'),
+      loadImage('industrial', 'assets/kenney-industrial/tilemap_packed.png'),
+    ];
     Object.keys(PIECE_FILES).forEach(k => jobs.push(loadImage('piece' + k, 'assets/chess-lucas312/' + PIECE_FILES[k] + '.png')));
     return Promise.all(jobs).then(build);
   };
