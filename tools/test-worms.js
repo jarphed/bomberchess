@@ -12,7 +12,7 @@ function game(n = 2, type = 'human') {
 function range() {
   const L = game(), w = Worms.create(L);
   w.terrain = [{ kind: 'girder', x: 0, y: 460, w: 960, h: 12 }];
-  for (const [i, u] of w.units.entries()) Object.assign(u, { x: 220 + 460 * i, y: 460, angle: 0 });
+  for (const [i, u] of w.units.entries()) Object.assign(u, { x: 220 + 460 * i, y: 460, face: i ? -1 : 1, angle: 0 });
   return { L, w, step: (dt, input) => Worms.update(L, w, dt, input) };
 }
 function fire(step, duration = 0.6) {
@@ -319,8 +319,8 @@ for (const kind of ['grenade', 'rocket']) {
   Lh.emit = ev => { if (ev.e === 'snd') sounds.push(ev.n); };
   const wHoly = Worms.create(Lh);
   wHoly.terrain = [{ kind: 'girder', x: 0, y: 460, w: 960, h: 12 }];
-  Object.assign(wHoly.units[0], { x: 220, y: 460, angle: 0.5, weapon: 'holy', ammo: { holy: 1 } });
-  Object.assign(wHoly.units[1], { x: 760, y: 460 });
+  Object.assign(wHoly.units[0], { x: 220, y: 460, face: 1, angle: 0.5, weapon: 'holy', ammo: { holy: 1 } });
+  Object.assign(wHoly.units[1], { x: 760, y: 460, face: -1 });
   Worms.update(Lh, wHoly, 0.5, { charge: true });
   Worms.update(Lh, wHoly, tick, { charge: false });
   Worms.update(Lh, wHoly, 2.45, {});
@@ -395,5 +395,44 @@ for (const kind of ['grenade', 'rocket']) {
   Object.assign(b, { x: 340, y: 344, grounded: false, vx: 290, vy: -90, hp: 100 });
   for (let i = 0; i < 180; i++) Worms.update(L, w, 1 / 60, {});
   assert(b.hp > 0 && b.grounded && b.y < 420, 'knocked-back worm hitting crater wall lands safely instead of falling through');
+}
+
+// Randomized worm spawns: seat 0 is not pinned to the left side across battles, and worms stay spaced apart.
+{
+  let p0Left = 0, p0Right = 0;
+  for (let seed = 1; seed <= 40; seed++) {
+    const L = game(4);
+    L.wormSeed = seed * 9973;
+    const w = Worms.create(L);
+    if (w.units[0].x < 480) p0Left++; else p0Right++;
+    for (let i = 0; i < w.units.length; i++) {
+      for (let j = i + 1; j < w.units.length; j++) {
+        const d = Math.hypot(w.units[i].x - w.units[j].x, w.units[i].y - w.units[j].y);
+        assert(d >= 70, `worms spawn with reasonable spacing (got ${d.toFixed(1)})`);
+      }
+    }
+  }
+  assert(p0Left >= 8 && p0Right >= 8, `seat 0 spawns randomly on both sides (left=${p0Left}, right=${p0Right})`);
+}
+
+// Grenade throw range: min power barely throws, max power throws far across the arena.
+{
+  const throwLandingX = chargeDuration => {
+    const { w, step } = range();
+    w.units[0].x = 80;
+    w.units[0].weapon = 'grenade';
+    w.units[0].angle = Math.PI / 4;
+    fire(step, chargeDuration);
+    while (w.projectile) {
+      const prevVy = w.projectile.vy;
+      step(tick);
+      if (w.projectile && prevVy > 0 && w.projectile.vy < 0) return w.projectile.x;
+    }
+    return w.blast.x;
+  };
+  const shortDist = throwLandingX(0.02) - 80;
+  const longDist = throwLandingX(1.2) - 80;
+  assert(shortDist > 0 && shortDist < 55, `min-power grenade barely throws (dist=${shortDist.toFixed(1)})`);
+  assert(longDist > 580, `max-power grenade throws far across the map (dist=${longDist.toFixed(1)})`);
 }
 console.log('Worms tests passed (terrain, CPU, turns, controls, weapons, crates, elimination).');

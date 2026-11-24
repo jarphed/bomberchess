@@ -275,32 +275,35 @@
   function findSpawns(w, count) {
     const spots = [];
     for (let x = 42; x <= W - 42; x += 4) {
-      // Check both upper sky-islands and main island surfaces so spawns spread naturally.
-      let y = landing(w, x, 36, WATER_Y - 18);
-      if (y === Infinity) continue;
-      if (bodyBlocked(w, x, y) || solid(w, x, y - 24)) {
-        const lower = landing(w, x, y + 18, WATER_Y - 18);
-        if (lower < Infinity && !bodyBlocked(w, x, lower) && !solid(w, x, lower - 24)) y = lower;
-        else continue;
+      // Collect all valid landing surfaces at this x (both sky-islands/girders and lower terrain).
+      let from = 36;
+      while (from < WATER_Y - 18) {
+        const y = landing(w, x, from, WATER_Y - 18);
+        if (y === Infinity) break;
+        from = y + 18;
+        if (bodyBlocked(w, x, y) || solid(w, x, y - 24)) continue;
+        const l = landing(w, x - 6, y - 10, y + 12), r = landing(w, x + 6, y - 10, y + 12);
+        if (l >= WATER_Y - 14 || r >= WATER_Y - 14) continue;
+        spots.push({ x, y });
       }
-      const l = landing(w, x - 6, y - 10, y + 12), r = landing(w, x + 6, y - 10, y + 12);
-      if (l >= WATER_Y - 14 || r >= WATER_Y - 14) continue;
-      spots.push({ x, y });
     }
     const chosen = [];
     for (let i = 0; i < count; i++) {
-      const ideal = count === 1 ? W / 2 : 120 + (W - 240) * i / (count - 1);
       let pick = null;
-      for (const minSep of [80, 40, 0]) {
-        let bestScore = Infinity;
-        for (const s of spots) {
-          if (chosen.some(c => Math.abs(c.x - s.x) < minSep)) continue;
-          const score = Math.abs(s.x - ideal) * 2.4 + Math.abs(s.y - 290) * 0.35;
-          if (score < bestScore) { bestScore = score; pick = s; }
+      for (const minSep of [150, 110, 70, 35, 0]) {
+        const pool = minSep > 0
+          ? spots.filter(s => chosen.every(c => Math.hypot(c.x - s.x, c.y - s.y) >= minSep))
+          : spots;
+        if (pool.length) {
+          pick = pool[Math.floor(nextRand(w) * pool.length)];
+          break;
         }
-        if (pick) break;
       }
-      chosen.push(pick || { x: Math.round(ideal), y: Math.min(WATER_Y - 20, landing(w, ideal, 0, H)) });
+      if (!pick) {
+        const fx = Math.round(80 + nextRand(w) * (W - 160));
+        pick = { x: fx, y: Math.min(WATER_Y - 20, landing(w, fx, 0, H)) };
+      }
+      chosen.push(pick);
     }
     return chosen;
   }
@@ -366,6 +369,7 @@
 
   function shotSpeed(kind, power) {
     if (kind === 'rocket') return 165 + 275 * power;
+    if (kind === 'grenade') return 120 + 560 * power;
     if (kind === 'cluster') return 240 + 380 * power;
     if (kind === 'holy') return 175 + 330 * power;
     if (kind === 'mortar') return 250 + 470 * power;
