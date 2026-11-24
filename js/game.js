@@ -149,7 +149,7 @@
     });
     N.snaps = [];
     sync();
-    A.music(G.boardMode === 'bomber' ? 'bomber' : 'chess');
+    A.music(S.phase === 'worms' ? 'worms' : G.boardMode === 'bomber' ? 'bomber' : 'chess');
   }
 
   function onPhase(prev, next) {
@@ -164,7 +164,7 @@
       A.music(null);
     } else if (next === 'worms') {
       G.wormInputKey = ''; G.wormUiClick = !!(I.mouse.down || I.mouse.clicked); G.puInfo = null; G.turnBanner = null;
-      A.music('bomber');
+      A.music('worms');
     } else if (next === 'bomber') {
       G.flip = null; G.boardMode = 'bomber'; N.snaps = [];
       A.music('bomber');

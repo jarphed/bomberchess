@@ -186,4 +186,40 @@ for (const [playBomber, playWorms, phase] of [[true, false, 'toBomber'], [false,
   BC.Snap.apply(snapMirror, JSON.parse(JSON.stringify(BC.Snap.encode(kGame, true))));
   assert.equal(snapMirror.players[0].helmetHits, 6, 'helmet damage syncs over LAN snapshots');
 }
+
+// Worms revival: winning a Worms round after your king has died revives your king
+// both when you are the sole survivor and when you finish with strictly the highest HP at the turn limit (ties do not revive).
+for (const scenario of ['sole', 'hpLead', 'hpTie']) {
+  const rGame = BC.Logic.create({
+    n: 3, types: ['HUMAN', 'HUMAN', 'HUMAN'], names: ['A', 'B', 'C'],
+    moves: 2, bomberTime: 15, revive: true, playChess: true, playBomber: false, playWorms: true,
+  });
+  // Eliminate player 0's king during chess
+  rGame.chess.occ.forEach((q, i) => {
+    if (!q || q.o !== 0) return;
+    if (q.t === 'K') rGame.chess.occ[i] = null;
+    else q.o = -1;
+  });
+  rGame.players[0].alive = false;
+  rGame.players[0].outReason = 'KING TAKEN';
+  rGame.players[0].place = 3;
+  while (rGame.phase === 'chess') { rGame.turnLeft = 0; rGame.update(1 / 60, {}); }
+  while (rGame.phase !== 'worms') rGame.update(1 / 60, {});
+  const w = rGame.worms;
+  if (scenario === 'sole') {
+    w.units[0].hp = 70; w.units[1].hp = 0; w.units[2].hp = 0;
+  } else if (scenario === 'hpLead') {
+    w.units[0].hp = 90; w.units[1].hp = 40; w.units[2].hp = 0;
+    w.units.forEach(u => { u.turns = w.maxTurns; });
+  } else {
+    w.units[0].hp = 80; w.units[1].hp = 80; w.units[2].hp = 0;
+    w.units.forEach(u => { u.turns = w.maxTurns; });
+  }
+  w.phase = 'done';
+  for (let i = 0; i < 600 && rGame.phase !== 'chess'; i++) rGame.update(1 / 60, {});
+  assert.equal(rGame.phase, 'chess');
+  const shouldRevive = scenario !== 'hpTie';
+  assert.equal(rGame.players[0].alive, shouldRevive, `worms ${scenario}: alive=${shouldRevive}`);
+  assert.equal(BC.Chess.kingCell(rGame.chess, 0) >= 0, shouldRevive, `worms ${scenario}: king placed on board`);
+}
 console.log('Battle cycle, LAN snapshots and chess consequences passed.');

@@ -545,7 +545,7 @@
         b.invuln = SHIELD_GRACE;
         const pl = G.players[b.p];
         if (pl) { pl.sp.flamepass = false; G.rev++; }
-        G.emit({ e: 'snd', n: 'crack' });
+        G.emit({ e: 'snd', n: 'shield' });
         G.emit({ e: 'burst', c, col: ['#fff', '#ffb0f0', '#ff78dc', '#c050ff'], n: 22, sp: 200, sz: 3 });
         G.emit({ e: 'popup', c, text: 'SHIELD BROKE!', col: '#ff9ae6' });
         continue;

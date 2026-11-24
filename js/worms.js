@@ -443,7 +443,13 @@
     }
     consumeAmmo(u, kind);
     u.lastPower = Math.round(power * 100) / 100;
-    snd(L, kind === 'sheep' ? 'baa' : kind === 'meteor' ? 'whistle' : 'bombPlace');
+    const fireSnd = kind === 'sheep' ? 'baa'
+      : kind === 'meteor' ? 'whistle'
+      : kind === 'mortar' ? 'mortar'
+      : kind === 'rocket' ? 'rocket'
+      : kind === 'drill' ? 'drill'
+      : 'throw';
+    snd(L, fireSnd);
     w.charging = false; w.charge = 0; w.weaponCue = 0; w.projectile = s; w.phase = 'shot';
     w.retreat = RETREAT; w.rearm = false;
   }
@@ -475,6 +481,8 @@
       w.kills.push({ by: killer, victim: u.p });
       if (w.deathOrder) w.deathOrder.push({ p: u.p, by: killer, drowned: false });
       snd(L, 'splat');
+    } else {
+      snd(L, 'hurt');
     }
     emit(L, { e: 'wb', p: u.p, x: Math.round(u.x), y: Math.round(u.y - 12), bx: Math.round(bx), by: Math.round(by), dmg, dead, face: u.face });
   }
@@ -543,7 +551,9 @@
         const x = ox + (s.x - ox) * i / n, y = oy + (s.y - oy) * i / n;
         if (!solid(w, x, y)) continue;
         if (s.kind === 'drill' && (s.bores || 0) < 6) {
-          carve(w, { x, y, by: s.by }, 15); s.bores = (s.bores || 0) + 1; continue;
+          carve(w, { x, y, by: s.by }, 15); s.bores = (s.bores || 0) + 1;
+          if (s.bores % 2 === 1) snd(L, 'drill');
+          continue;
         }
         if (s.kind === 'cluster') return scatter(L, w, s, ox, oy);
         if (!TIMED_BOUNCE.has(s.kind)) { s.x = x; s.y = y; return explode(L, w, s); }
@@ -555,7 +565,7 @@
           const tx = s.vx - vn * nx, ty = s.vy - vn * ny;
           s.vx = tx * tf - vn * nx * nf;
           s.vy = ty * tf - vn * ny * nf;
-          if (Math.hypot(s.vx, s.vy) > 85) snd(L, 'clop');
+          if (Math.hypot(s.vx, s.vy) > 85) snd(L, 'bounce');
         } else {
           s.vx *= -nf; s.vy *= -nf;
         }
@@ -653,6 +663,9 @@
     return { dx: away, jump: wall || Math.abs(u.x - near.x) < 44 };
   }
 
+  function footBlocked(w, x, y) {
+    return solid(w, x, y - 2) || solid(w, x, y - 6) || bodyBlocked(w, x, y);
+  }
   function moveWorm(L, w, u, input, dt) {
     const dx = clamp(input.dx || 0, -1, 1);
     if (dx) {
@@ -665,8 +678,13 @@
         } else if (!solid(w, x, u.y - 4) && (!bodyBlocked(w, x, u.y) || bodyBlocked(w, u.x, u.y))) {
           u.x = x; u.grounded = false;
         }
-      } else if (Math.abs(u.vx) < 150 && (!bodyBlocked(w, x, u.y) || bodyBlocked(w, u.x, u.y))) {
-        u.x = x;
+      } else if (Math.abs(u.vx) < 150) {
+        if (!footBlocked(w, x, u.y) || footBlocked(w, u.x, u.y)) {
+          u.x = x;
+        } else if (u.vy >= -40) {
+          const stepY = landing(w, x, u.y - 8, u.y + 2);
+          if (stepY < Infinity && !bodyBlocked(w, x, stepY)) { u.x = x; u.y = stepY; }
+        }
       }
     }
     if (input.jump && !w.jumpHeld) {
@@ -676,13 +694,14 @@
         u.grounded = false;
         u.backflipped = false;
         w.jumpTap = 0.34;
+        snd(L, 'jump');
       } else if (w.jumpTap > 0 && !u.backflipped) {
         // Classic Worms double-jump backflip to reach high platforms behind you.
         u.vy = -345;
         u.vx = -u.face * 75;
         u.backflipped = true;
         w.jumpTap = 0;
-        snd(L, 'select');
+        snd(L, 'backflip');
       }
     }
     w.jumpHeld = !!input.jump;
@@ -767,11 +786,11 @@
           enforceWeaponAngle(u);
         }
         w.weaponCue = 1.65;
-        snd(L, 'menuMove');
+        snd(L, 'weaponSwitch');
       } else if (input.select && !w.charging && avail.includes(input.select) && u.weapon !== input.select) {
         u.weapon = input.select;
         enforceWeaponAngle(u);
-        snd(L, 'menuMove');
+        snd(L, 'weaponSwitch');
       }
       w.cycleHeld = !!input.cycle;
       if (u.weapon === 'mortar') {
@@ -799,9 +818,16 @@
       if (v.hp <= 0) continue;
       if (v.vx) {
         const nx = v.x + v.vx * dt;
-        if (nx < 7 || nx > W - 7 || (!v.grounded && bodyBlocked(w, nx, v.y) && !bodyBlocked(w, v.x, v.y))) {
-          v.vx *= -0.45;
-          v.x = clamp(v.x, 7, W - 7);
+        const blocked = nx < 7 || nx > W - 7 || (!v.grounded && footBlocked(w, nx, v.y) && !footBlocked(w, v.x, v.y));
+        if (blocked) {
+          const stepY = (nx >= 7 && nx <= W - 7 && v.vy >= -40) ? landing(w, nx, v.y - 10, v.y + 2) : Infinity;
+          if (stepY < Infinity && !bodyBlocked(w, nx, stepY)) {
+            v.x = nx;
+            v.y = stepY;
+          } else {
+            v.vx *= -0.45;
+            v.x = clamp(v.x, 7, W - 7);
+          }
         } else {
           v.x = nx;
         }
@@ -814,7 +840,12 @@
         else v.y = dest;
         v.grounded = false;
       } else {
-        const y = landing(w, v.x, v.y, dest);
+        let y = landing(w, v.x, v.y, dest);
+        // If feet ended up slightly inside solid terrain (e.g. crater slope), recover to the walkable surface above.
+        if (y === Infinity && solid(w, v.x, v.y)) {
+          y = landing(w, v.x, Math.max(0, v.y - 18), dest);
+        }
+        const wasGrounded = v.grounded;
         v.grounded = y < Infinity;
         if (v.grounded) {
           v.y = y; v.vy = 0; v.vx = 0; v.backflipped = false;
@@ -822,6 +853,8 @@
             const fdmg = Math.min(35, Math.ceil((prevVy - 455) * 0.085));
             snd(L, 'thud');
             hurtWorm(L, w, v, fdmg, v.x, y + 6, v.fallBy, 0);
+          } else if (!wasGrounded && prevVy > 130) {
+            snd(L, 'land');
           }
           delete v.fallBy;
         } else {
@@ -833,18 +866,26 @@
         v.hp = 0; v.vx = 0;
         w.kills.push({ by: killer, victim: v.p });
         if (w.deathOrder) w.deathOrder.push({ p: v.p, by: killer, drowned: true });
-        snd(L, 'splat');
+        snd(L, 'splash');
         emit(L, { e: 'wb', p: v.p, x: Math.round(v.x), y: WATER_Y - 2, bx: Math.round(v.x), by: WATER_Y + 18, dmg: 60, dead: true, fall: true });
       }
     }
 
     for (const c of w.crates) {
       if (c.flying) continue;
-      c.vy = (c.vy || 0) + GRAVITY * dt;
+      const prevCvy = c.vy || 0;
+      c.vy = prevCvy + GRAVITY * dt;
       const bottom = c.y + 8, y = landing(w, c.x, bottom, bottom + c.vy * dt);
-      if (y < Infinity) { c.y = y - 8; c.vy = 0; } else c.y += c.vy * dt;
+      if (y < Infinity) {
+        c.y = y - 8;
+        if (prevCvy > 110) snd(L, 'crateLand');
+        c.vy = 0;
+      } else c.y += c.vy * dt;
     }
-    if (w.crates.some(c => !c.flying && c.y >= WATER_Y + 2)) w.crates = w.crates.filter(c => c.flying || c.y < WATER_Y + 2);
+    if (w.crates.some(c => !c.flying && c.y >= WATER_Y + 2)) {
+      snd(L, 'splash');
+      w.crates = w.crates.filter(c => c.flying || c.y < WATER_Y + 2);
+    }
 
     if (aiming) {
       if (!u || u.hp <= 0) { nextTurn(w); return; }
@@ -887,7 +928,7 @@
       const c = w.crates[w.crates.length - 1];
       const f = Math.min(1, dt / w.delay);
       c.x += (c.tx - c.x) * f; c.y += (c.ty - c.y) * f;
-      if ((w.delay -= dt) <= 0) { c.flying = false; w.phase = 'aim'; }
+      if ((w.delay -= dt) <= 0) { c.flying = false; snd(L, 'crateLand'); w.phase = 'aim'; }
     }
   }
 

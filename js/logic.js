@@ -75,7 +75,7 @@
         L.worms = BC.Worms.create(L);
         L.phase = 'worms';
         if (first) banner('WORMS START!', 'ワーム スタート', { color: '#bff07a', dur: 1.8, force: true });
-        snd('phaseBomber');
+        snd('phaseWorms');
         touch();
         return;
       }
@@ -427,7 +427,7 @@
       L.transT = 0;
       if (worms) banner('WORMS TIME!', 'ワームタイム', { color: '#bff07a', dur: 2.2, force: true });
       else banner('BOMBER TIME!!', 'ボンバータイム', { color: '#ff7a3c', dur: 2.4, force: true });
-      snd('phaseBomber');
+      snd(worms ? 'phaseWorms' : 'phaseBomber');
       touch();
     }
 
@@ -675,10 +675,17 @@
       } else if (L.phase === 'worms') {
         const w = L.worms;
         if (BC.Worms.update(L, w, dt, inputs[w.active] || {})) {
-          const standing = w.units.filter(b => b.hp > 0).map(b => b.p);
+          const aliveUnits = w.units.filter(b => b.hp > 0);
+          let standing = aliveUnits.map(b => b.p);
           if (wormsOnly) {
             finishStandalone(standing, w.deathOrder, 'LAST WORM STANDING', 'BLOWN UP');
           } else {
+            // If the turn limit ends the round with multiple worms alive, a unique highest-HP leader still wins the round.
+            if (aliveUnits.length > 1) {
+              const maxHp = Math.max(...aliveUnits.map(b => b.hp));
+              const leaders = aliveUnits.filter(b => b.hp === maxHp);
+              if (leaders.length === 1) standing = [leaders[0].p];
+            }
             endBattle(standing, w.units.filter(b => b.hp <= 0).map(b => b.p),
               w.kills.filter(k => k.by >= 0 && k.by !== k.victim));
           }
@@ -761,7 +768,7 @@
           burst(g.cell, ['#fff', '#ffe14a', '#7ef2ff', BC.PLAYER_COLORS[g.p]], t === 'K' ? 50 : 30, 180, 3);
           popup(g.cell, t === 'K' ? 'KING REVIVED!' : 'PAWN REVIVED!', BC.PLAYER_COLORS[g.p]);
           if (t === 'K') banner(BC.PLAYER_NAMES[g.p] + ' IS BACK!', 'ふっかつ!', { color: BC.PLAYER_COLORS[g.p], dur: 2 });
-          snd('promote');
+          snd(t === 'K' ? 'revive' : 'promote');
           touch();
         });
         if (L.transT > 2.6) {

@@ -372,4 +372,28 @@ for (const kind of ['grenade', 'rocket']) {
   while (wMo.projectile) stepMo(tick);
   assert(wMo.blast.x > moA.x + 120, 'falling mortar shell impacts downrange');
 }
+
+// Crater collision: jumping into a crater, being knocked back into a crater wall, and walking across a crater never fall through solid ground.
+{
+  const L = game(), w = Worms.create(L);
+  // Thick solid island slab so craters carve bowls with walkable floors underneath.
+  w.terrain = [{ kind: 'girder', x: 0, y: 300, w: 960, h: 200 }];
+  w.craters.push({ x: 360, y: 300, r: 52 });
+  const [a, b] = w.units;
+  Object.assign(a, { x: 295, y: 300, grounded: true, face: 1, vx: 0, vy: 0, hp: 100 });
+  Object.assign(b, { x: 382, y: 348, grounded: false, face: -1, vx: 0, vy: 0, hp: 100 });
+  // Jump right into the crater bowl
+  Worms.update(L, w, 0.08, { dx: 1, jump: true });
+  for (let i = 0; i < 180; i++) Worms.update(L, w, 1 / 60, { dx: 1 });
+  assert(a.hp > 0 && a.y < 420 && a.grounded, 'jumping into a crater lands on walkable crater ground without falling through');
+  // Walk back and forth inside the crater floor
+  const beforeWalkX = a.x;
+  for (let i = 0; i < 40; i++) Worms.update(L, w, 1 / 60, { dx: -1 });
+  assert(a.hp > 0 && a.grounded && a.x < beforeWalkX - 10, 'worm walks across crater ground');
+
+  // Knockback into a crater slope never tunnels through solid earth
+  Object.assign(b, { x: 340, y: 344, grounded: false, vx: 290, vy: -90, hp: 100 });
+  for (let i = 0; i < 180; i++) Worms.update(L, w, 1 / 60, {});
+  assert(b.hp > 0 && b.grounded && b.y < 420, 'knocked-back worm hitting crater wall lands safely instead of falling through');
+}
 console.log('Worms tests passed (terrain, CPU, turns, controls, weapons, crates, elimination).');
