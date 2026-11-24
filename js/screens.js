@@ -599,41 +599,391 @@
     R.text('ARROWS + ENTER  OR  CLICK      ESC: BACK TO GAME', W / 2, 590, { size: 10, align: 'center', color: '#99a' });
   };
 
+  // ------------------------------------------------------------ over effects
+  const CONFETTI_COLORS = ['#ffe14a', '#ff4a6e', '#3fd8ff', '#62f060', '#ff9f1c', '#d07aff', '#ffffff'];
+
+  function spawnConfetti(list, x, y, vx, vy, front, winColor) {
+    const colors = winColor ? CONFETTI_COLORS.concat([winColor, winColor]) : CONFETTI_COLORS;
+    list.push({
+      x, y, vx, vy,
+      rot: u.rand(0, Math.PI * 2),
+      vr: u.rand(-8, 8),
+      tilt: u.rand(0, Math.PI * 2),
+      vtilt: u.rand(6, 13),
+      w: u.randInt(7, 13),
+      h: u.randInt(4, 8),
+      color: u.pick(colors),
+      sway: u.rand(0, Math.PI * 2),
+      swaySpd: u.rand(2.2, 4.5),
+      front,
+    });
+  }
+
+  S.initOver = function (G) {
+    const o = G.over;
+    if (!o) return;
+    if (o.won) {
+      const winCol = BC.PLAYER_COLORS[o.winner];
+      o.confetti = [];
+      // two big side cannons bursting inward + initial canopy of festive confetti
+      for (let i = 0; i < 65; i++) {
+        const left = i % 2 === 0;
+        const x = left ? u.rand(20, 140) : u.rand(W - 140, W - 20);
+        const y = u.rand(H * 0.35, H * 0.78);
+        const vx = (left ? 1 : -1) * u.rand(180, 480);
+        const vy = u.rand(-560, -240);
+        spawnConfetti(o.confetti, x, y, vx, vy, i % 3 === 0, winCol);
+      }
+      for (let i = 0; i < 60; i++) {
+        spawnConfetti(o.confetti, u.rand(0, W), u.rand(-H * 0.6, H * 0.35), u.rand(-45, 45), u.rand(40, 130), i % 3 === 0, winCol);
+      }
+      o.confettiTimer = 0;
+    } else if (o.lost) {
+      o.rain = [];
+      for (let i = 0; i < 70; i++) {
+        o.rain.push({
+          x: u.rand(0, W), y: u.rand(0, H),
+          len: u.rand(12, 24), spd: u.rand(260, 420),
+          alpha: u.rand(0.12, 0.32),
+        });
+      }
+      o.tears = [];
+      o.ripples = [];
+      o.tearTimer = 0;
+    }
+  };
+
+  S.updateOver = function (G, dt) {
+    const o = G.over;
+    if (!o) return;
+    if (o.won && o.confetti) {
+      const winCol = BC.PLAYER_COLORS[o.winner];
+      o.confettiTimer = (o.confettiTimer || 0) + dt;
+      while (o.confettiTimer >= 0.045) {
+        o.confettiTimer -= 0.045;
+        if (o.confetti.length < 180) {
+          spawnConfetti(o.confetti, u.rand(0, W), -16, u.rand(-40, 40), u.rand(65, 145), Math.random() < 0.35, winCol);
+        }
+      }
+      for (let i = o.confetti.length - 1; i >= 0; i--) {
+        const p = o.confetti[i];
+        p.vy = Math.min(220, p.vy + 290 * dt);
+        p.vx *= Math.pow(0.45, dt);
+        p.sway += p.swaySpd * dt;
+        p.x += (p.vx + Math.sin(p.sway) * 42) * dt;
+        p.y += p.vy * dt;
+        p.rot += p.vr * dt;
+        p.tilt += p.vtilt * dt;
+        if (p.y > H + 24) {
+          if (o.confetti.length > 130) o.confetti.splice(i, 1);
+          else {
+            p.y = -16;
+            p.x = u.rand(0, W);
+            p.vx = u.rand(-40, 40);
+            p.vy = u.rand(65, 145);
+          }
+        }
+      }
+    } else if (o.lost) {
+      if (o.rain) {
+        o.rain.forEach(r => {
+          r.y += r.spd * dt;
+          r.x -= r.spd * 0.12 * dt;
+          if (r.y > H + 24) { r.y = -24; r.x = u.rand(0, W + 80); }
+        });
+      }
+      o.tearTimer = (o.tearTimer || 0) + dt;
+      const sobCycle = o.t % 1.9;
+      const interval = sobCycle < 0.35 ? 0.08 : 0.22;
+      if (o.tearTimer >= interval) {
+        o.tearTimer = 0;
+        const side = Math.random() < 0.5 ? -1 : 1;
+        o.tears.push({
+          x: side * u.rand(10, 15),
+          y: -48,
+          vx: side * u.rand(24, 52),
+          vy: u.rand(-40, -10),
+          sz: u.randInt(4, 6),
+        });
+      }
+      for (let i = o.tears.length - 1; i >= 0; i--) {
+        const tr = o.tears[i];
+        tr.vy += 320 * dt;
+        tr.x += tr.vx * dt;
+        tr.y += tr.vy * dt;
+        if (tr.y >= 4) {
+          o.ripples.push({ x: tr.x, y: 4, t: 0, dur: 0.55 });
+          o.tears.splice(i, 1);
+        }
+      }
+      for (let i = o.ripples.length - 1; i >= 0; i--) {
+        o.ripples[i].t += dt;
+        if (o.ripples[i].t >= o.ripples[i].dur) o.ripples.splice(i, 1);
+      }
+    }
+  };
+
+  function drawConfetti(c, list, front) {
+    if (!list) return;
+    for (let i = 0; i < list.length; i++) {
+      const p = list[i];
+      if (!!p.front !== front) continue;
+      const sy = Math.cos(p.tilt);
+      if (Math.abs(sy) < 0.08) continue;
+      c.save();
+      c.translate(p.x, p.y);
+      c.rotate(p.rot);
+      c.scale(1, sy);
+      c.fillStyle = p.color;
+      c.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+      c.restore();
+    }
+  }
+
+  function drawWinnerDance(G, c, win, cx, baseY) {
+    const t = G.time;
+    // soft golden celebration glow behind the winner
+    c.save();
+    c.translate(cx, baseY - 46);
+    c.rotate(t * 0.7);
+    for (let i = 0; i < 8; i++) {
+      c.rotate(Math.PI / 4);
+      c.fillStyle = i % 2 === 0 ? 'rgba(255, 225, 74, 0.13)' : 'rgba(255, 255, 255, 0.07)';
+      c.beginPath();
+      c.moveTo(0, 0);
+      c.lineTo(-14, -74);
+      c.lineTo(14, -74);
+      c.closePath();
+      c.fill();
+    }
+    c.restore();
+
+    // 3.2s dance choreography: boogie hops -> 360° victory spin -> double-hop cheer
+    const phase = t % 3.2;
+    let dx = 0, jump = 0, rot = 0, sx = 1, sy = 1, frame = 1;
+    if (phase < 1.6) {
+      const hop = Math.abs(Math.sin(phase * Math.PI * 2.5));
+      jump = hop * 18;
+      dx = Math.sin(phase * Math.PI * 1.25) * 20;
+      rot = Math.sin(phase * Math.PI * 2.5) * 0.14;
+      sx = 1 + (0.45 - hop) * 0.16;
+      sy = 1 - (0.45 - hop) * 0.16;
+      const step = Math.floor(phase * 6) % 4;
+      frame = [2, 1, 3, 1][step];
+    } else if (phase < 2.3) {
+      const p = (phase - 1.6) / 0.7;
+      jump = Math.sin(p * Math.PI) * 24;
+      sx = 0.94;
+      sy = 1.08;
+      const spin = [1, 4, 0, 10, 1];
+      frame = spin[Math.min(spin.length - 1, Math.floor(p * spin.length))];
+    } else {
+      const p = (phase - 2.3) / 0.9;
+      const hop = Math.abs(Math.sin(p * Math.PI * 2));
+      jump = hop * 22;
+      rot = Math.sin(p * Math.PI * 4) * 0.12;
+      sx = 1 + (0.45 - hop) * 0.18;
+      sy = 1 - (0.45 - hop) * 0.18;
+      frame = Math.floor(p * 8) % 2 === 0 ? 2 : 3;
+    }
+
+    // stage shadow shrinks as the character jumps
+    const shScale = Math.max(0.45, 1 - jump / 70);
+    c.fillStyle = 'rgba(0,0,0,0.45)';
+    c.beginPath();
+    c.ellipse(cx + dx, baseY + 2, 34 * shScale, 9 * shScale, 0, 0, Math.PI * 2);
+    c.fill();
+
+    // dancing character
+    c.save();
+    c.translate(cx + dx, baseY - jump);
+    c.rotate(rot);
+    c.scale(sx, sy);
+    R.drawChar(win, frame, -48, -96, 96);
+    c.restore();
+
+    // bouncing crown floating playfully above the head
+    if (BC.Assets.glyphs.crown) {
+      const crownLag = Math.max(0, Math.sin(t * 9 - 0.6)) * 5;
+      c.save();
+      c.translate(cx + dx, baseY - jump - 102 - crownLag);
+      c.rotate(rot * 1.4);
+      c.drawImage(BC.Assets.glyphs.crown, -22, -22, 44, 44);
+      c.restore();
+    }
+
+    // twinkling celebration sparkles & floating musical notes
+    for (let i = 0; i < 4; i++) {
+      const a = t * 2.4 + i * (Math.PI / 2);
+      const rx = cx + Math.cos(a) * 66;
+      const ry = baseY - 52 + Math.sin(a * 1.3) * 26;
+      const pulse = 0.5 + 0.5 * Math.sin(t * 9 + i * 1.7);
+      const sz = Math.round(4 + pulse * 5);
+      c.fillStyle = i % 2 === 0 ? '#ffe14a' : '#7ef2ff';
+      c.fillRect(Math.round(rx - sz / 2), Math.round(ry - 1), sz, 2);
+      c.fillRect(Math.round(rx - 1), Math.round(ry - sz / 2), 2, sz);
+    }
+    for (let i = 0; i < 2; i++) {
+      const nt = (t * 0.75 + i * 0.5) % 1;
+      const nx = cx + (i === 0 ? -64 : 64) + Math.sin(nt * 6 + i) * 8;
+      const ny = baseY - 58 - nt * 42;
+      R.text(i === 0 ? '♪' : '♫', nx, ny, { size: 16, align: 'center', color: i === 0 ? '#ffe14a' : '#ff8ad8', alpha: Math.sin(nt * Math.PI), shadow: false });
+    }
+  }
+
+  function drawLoserCrying(G, c, loser, cx, baseY) {
+    const t = G.time;
+    const o = G.over;
+    const img = BC.Assets.chars[loser];
+
+    // shimmering tear puddle on the floor
+    const puddleR = 46 + Math.min(18, o.t * 3.5);
+    c.fillStyle = 'rgba(95, 195, 255, 0.28)';
+    c.beginPath();
+    c.ellipse(cx, baseY + 4, puddleR, 12, 0, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = 'rgba(190, 240, 255, 0.25)';
+    c.beginPath();
+    c.ellipse(cx - 10, baseY + 2, puddleR * 0.45, 4, 0, 0, Math.PI * 2);
+    c.fill();
+
+    // ripples where teardrops splash
+    if (o.ripples) {
+      o.ripples.forEach(rp => {
+        const k = rp.t / rp.dur;
+        c.strokeStyle = `rgba(180, 240, 255, ${(1 - k) * 0.75})`;
+        c.lineWidth = 2;
+        c.beginPath();
+        c.ellipse(cx + rp.x, baseY + rp.y, 4 + k * 20, 2 + k * 5, 0, 0, Math.PI * 2);
+        c.stroke();
+      });
+    }
+
+    // sobbing animation (periodic shudder + slow breathing heave)
+    const sobCycle = o.t % 1.9;
+    const sniff = sobCycle < 0.35 ? Math.sin((sobCycle / 0.35) * Math.PI) : 0;
+    const heave = Math.sin(t * 2.6) * 1.5;
+    const shiverX = sniff * Math.sin(t * 48) * 1.8;
+
+    // sitting character composed from frame 1 (front-facing)
+    if (img) {
+      const px = 6; // 16px sprite -> 96px
+      c.save();
+      c.imageSmoothingEnabled = false;
+      // splayed sitting feet resting forward on the floor
+      c.drawImage(img, 16 + 2, 13, 6, 3, Math.round(cx - 38), Math.round(baseY - 14), 6 * px, 3 * px);
+      c.drawImage(img, 16 + 8, 13, 6, 3, Math.round(cx + 2), Math.round(baseY - 14), 6 * px, 3 * px);
+
+      // slumped upper body sitting down
+      c.translate(cx + shiverX, baseY - 2);
+      c.scale(1.04 - sniff * 0.03, 0.94 + sniff * 0.04);
+      const bodyY = Math.round(-13 * px + heave + sniff * 2);
+      c.drawImage(img, 16, 0, 16, 13, -48, bodyY, 96, 13 * px);
+
+      // glistening crying eyes & streaming pixel tears (eye row is y=5, cols 5-6 & 9-10)
+      const eyeY = bodyY + 5 * px;
+      const streamH = 26 + Math.round(Math.sin(t * 14) * 3);
+      [-15, 9].forEach((ex, sideIdx) => {
+        // watery tear wells under eyes
+        c.fillStyle = '#7ef2ff';
+        c.fillRect(ex, eyeY + 2, 8, 5);
+        c.fillStyle = '#e0fbff';
+        c.fillRect(ex + 2, eyeY + 2, 4, 3);
+        // animated streaming tear ribbon down cheeks
+        c.fillStyle = 'rgba(126, 242, 255, 0.85)';
+        c.fillRect(ex + (sideIdx === 0 ? 1 : 3), eyeY + 6, 4, streamH);
+        const beadY = eyeY + 8 + ((Math.floor(t * 28) + sideIdx * 11) % Math.max(8, streamH - 4));
+        c.fillStyle = '#ffffff';
+        c.fillRect(ex + (sideIdx === 0 ? 1 : 3), beadY, 4, 4);
+      });
+      c.restore();
+    }
+
+    // arcing teardrops falling into the puddle
+    if (o.tears) {
+      o.tears.forEach(tr => {
+        c.fillStyle = '#7ef2ff';
+        c.fillRect(Math.round(cx + tr.x - tr.sz / 2), Math.round(baseY + tr.y - tr.sz / 2), tr.sz, tr.sz + 2);
+        c.fillStyle = '#ffffff';
+        c.fillRect(Math.round(cx + tr.x - tr.sz / 2 + 1), Math.round(baseY + tr.y - tr.sz / 2 + 1), 2, 2);
+      });
+    }
+
+    // tiny gloomy pixel raincloud hovering above the character
+    const cloudY = baseY - 108 + Math.sin(t * 2.2) * 3;
+    c.fillStyle = '#2d3958';
+    c.fillRect(cx - 26, cloudY + 4, 52, 14);
+    c.fillRect(cx - 18, cloudY - 4, 36, 12);
+    c.fillRect(cx - 8, cloudY - 10, 18, 10);
+    c.fillStyle = '#4c5f8a';
+    c.fillRect(cx - 22, cloudY + 4, 44, 8);
+    c.fillRect(cx - 14, cloudY - 2, 28, 8);
+    c.fillRect(cx - 6, cloudY - 7, 14, 6);
+    // little rain ticks from the cloud
+    c.fillStyle = 'rgba(130, 200, 255, 0.7)';
+    for (let i = 0; i < 4; i++) {
+      const ry = ((t * 58 + i * 11) % 24);
+      c.fillRect(cx - 18 + i * 12, Math.round(cloudY + 18 + ry), 2, 6);
+    }
+  }
+
   S.drawOver = function (G) {
     const c = ctx();
     const o = G.over;
     const k = Math.min(1, o.t / 0.6);
-    c.fillStyle = `rgba(0,0,10,${0.65 * k})`;
+    c.fillStyle = o.lost ? `rgba(4,8,24,${0.74 * k})` : `rgba(0,0,10,${0.65 * k})`;
     c.fillRect(0, 0, W, H);
+    if (o.lost && o.rain) {
+      c.strokeStyle = 'rgba(140, 185, 240, 0.28)';
+      c.lineWidth = 2;
+      c.beginPath();
+      o.rain.forEach(r => {
+        c.moveTo(r.x, r.y);
+        c.lineTo(r.x - r.len * 0.12, r.y + r.len);
+      });
+      c.stroke();
+    }
+    if (o.won) drawConfetti(c, o.confetti, false);
     if (o.t < 0.4) return;
     const cx = W / 2;
     const win = o.winner;
-    R.panel(cx - 330, 110, 660, 480, { bg: '#140f34', edge: win >= 0 ? BC.PLAYER_COLORS[win] : '#888' });
-    if (win >= 0) {
-      R.text('WINNER!', cx, 136, { size: 44, align: 'center', color: '#ffe14a', outline: 8 });
-      R.text('しょうり!', cx, 192, { size: 30, jp: true, align: 'center', color: '#fff', outline: 6 });
-      const f = [1, 2, 1, 3][Math.floor(G.time * 6) % 4];
-      R.drawChar(win, f, cx - 48, 238, 96);
-      if (BC.Assets.glyphs.crown) c.drawImage(BC.Assets.glyphs.crown, cx - 24, 206, 48, 48);
-      R.text(BC.PLAYER_NAMES[win], cx, 346, { size: 28, align: 'center', color: BC.PLAYER_COLORS[win], outline: 6 });
+    const edge = o.lost ? '#4a5c8a' : (win >= 0 ? BC.PLAYER_COLORS[win] : '#888');
+    const bg = o.lost ? '#0e1228' : '#140f34';
+    R.panel(cx - 330, 100, 660, 510, { bg, edge });
+    if (o.won && win >= 0) {
+      R.text('WINNER!', cx, 114, { size: 44, align: 'center', color: '#ffe14a', outline: 8 });
+      R.text('しょうり!', cx, 162, { size: 26, jp: true, align: 'center', color: '#fff', outline: 6 });
+      drawWinnerDance(G, c, win, cx, 336);
+      R.text(BC.PLAYER_NAMES[win], cx, 348, { size: 26, align: 'center', color: BC.PLAYER_COLORS[win], outline: 6 });
+      R.text(o.reason, cx, 384, { size: 11, align: 'center', color: '#9cf' });
+    } else if (o.lost) {
+      R.text('YOU LOST', cx, 114, { size: 44, align: 'center', color: '#8aa8e6', outline: 8 });
+      R.text('ざんねん...', cx, 162, { size: 26, jp: true, align: 'center', color: '#9cb0d8', outline: 6 });
+      drawLoserCrying(G, c, o.loser, cx, 334);
+      const wpl = G.players[win];
+      const wLabel = 'WINNER: ' + BC.PLAYER_NAMES[win] + (wpl && wpl.type === 'CPU' ? ' (CPU)' : '');
+      R.text(wLabel, cx, 350, { size: 18, align: 'center', color: BC.PLAYER_COLORS[win], outline: 5 });
+      R.text(o.reason, cx, 382, { size: 11, align: 'center', color: '#8ea4cc' });
     } else {
       R.text('DRAW', cx, 150, { size: 48, align: 'center', color: '#ccc', outline: 8 });
       R.text('ひきわけ', cx, 220, { size: 30, jp: true, align: 'center', color: '#fff', outline: 6 });
+      R.text(o.reason, cx, 382, { size: 11, align: 'center', color: '#9cf' });
     }
-    R.text(o.reason, cx, 388, { size: 12, align: 'center', color: '#9cf' });
     const order = G.players.slice().sort((a, b) => (a.place || 9) - (b.place || 9));
     order.forEach((pl, i) => {
-      const y = 418 + i * 26;
-      R.text((pl.place || '-') + '.', cx - 200, y, { size: 12, color: '#fff' });
-      R.text(BC.PLAYER_NAMES[pl.p], cx - 150, y, { size: 12, color: BC.PLAYER_COLORS[pl.p] });
-      R.text(pl.type, cx - 90, y, { size: 10, color: '#99a' });
-      R.text(pl.alive ? 'SURVIVOR' : pl.outReason, cx + 200, y, { size: 10, align: 'right', color: pl.alive ? '#ffe14a' : '#f88' });
+      const y = 412 + i * 26;
+      const isMe = o.lost && pl.p === o.loser;
+      R.text((pl.place || '-') + '.', cx - 210, y, { size: 12, color: '#fff' });
+      R.text(BC.PLAYER_NAMES[pl.p], cx - 160, y, { size: 12, color: BC.PLAYER_COLORS[pl.p] });
+      R.text(isMe ? 'YOU' : pl.type, cx - 100, y, { size: 10, color: isMe ? '#8aa8e6' : '#99a' });
+      R.text(pl.alive ? 'SURVIVOR' : pl.outReason, cx + 210, y, { size: 10, align: 'right', color: pl.alive ? '#ffe14a' : '#f88' });
     });
     if (o.t > 1.2) {
       const host = G.mode !== 'net' || (BC.Net.lobby && BC.Net.lobby.host === BC.Net.token);
       const txt = G.mode !== 'net' ? 'PUSH ENTER' : host ? 'PUSH ENTER: EVERYONE BACK TO LOBBY' : 'PUSH ENTER: BACK TO LOBBY';
-      if (blink(G.time, 2)) R.text(txt, cx, 556, { size: 14, align: 'center', color: '#fff' });
+      if (blink(G.time, 2)) R.text(txt, cx, 568, { size: 14, align: 'center', color: '#fff' });
     }
+    if (o.won) drawConfetti(c, o.confetti, true);
   };
 
   BC.Screens = S;

@@ -113,7 +113,10 @@
         case 'banner': banner(ev.text, ev.jp, ev.o); break;
         case 'burst': if (c) burst(c.sx, c.sy, ev.col, ev.n, ev.sp, ev.sz); break;
         case 'popup': if (c) popup(ev.text, c.sx, c.sy - 22 + (ev.dy || 0), ev.col, ev.sz); break;
-        case 'snd': A.play(ev.n); break;
+        case 'snd':
+          if (ev.n === 'win' && G.over && G.over.lost) A.play('gameOver');
+          else A.play(ev.n);
+          break;
         case 'shake': G.shake = Math.min(14, Math.max(G.shake, ev.v)); break;
         case 'shatter': if (c) shatterPiece(ev.c, { t: ev.t, o: ev.o }, ev.txt, ev.st); break;
         case 'spx': if (BC.SpecialFx) BC.SpecialFx.event(G, ev, c); break;
@@ -183,13 +186,20 @@
     if (G.S.phase !== G.lastPhase) { onPhase(G.lastPhase, G.S.phase); G.lastPhase = G.S.phase; }
     sync();
     if (G.S.over && G.screen === 'play') {
-      G.over = { winner: G.S.over.winner, reason: G.S.over.reason, t: 0 };
+      const winner = G.S.over.winner;
+      const mine = G.mode === 'net' ? G.mySeats.slice() : G.players.filter(pl => pl.type === 'HUMAN').map(pl => pl.p);
+      const lost = winner >= 0 && mine.length > 0 && !mine.includes(winner);
+      const won = winner >= 0 && !lost;
+      const loser = lost ? mine.slice().sort((a, b) => (G.players[a].place || 9) - (G.players[b].place || 9))[0] : -1;
+      const over = { winner, reason: G.S.over.reason, t: 0, won, lost, loser };
+      G.over = over;
+      if (BC.Screens && BC.Screens.initOver) BC.Screens.initOver(G);
       G.turnBanner = null;
       G.puInfo = null;
       G.screen = 'over';
       G.paused = false;
       A.music(null);
-      setTimeout(() => { if (G.screen === 'over') A.music('gameover'); }, 1600);
+      setTimeout(() => { if (G.screen === 'over' && G.over === over) A.music(over.won ? 'victory' : 'gameover'); }, 1400);
     }
   }
 
@@ -547,6 +557,7 @@
 
   function updateOver(dt) {
     G.over.t += dt;
+    if (BC.Screens && BC.Screens.updateOver) BC.Screens.updateOver(G, dt);
     tickBanner(dt);
     if (G.mode === 'net' && G.S) { advanceMirror(dt); sync(); }
     if (G.over.t > 1.2 && (I.menu().ok || I.mouse.clicked)) {
