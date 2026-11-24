@@ -106,7 +106,7 @@ for (const [playBomber, playWorms, phase] of [[true, false, 'toBomber'], [false,
   wOnly.update(15, {});
   assert.ok(wOnly.over, 'Worms-only ends the game when last worm is standing');
   assert.equal(wOnly.over.winner, 0);
-  assert.equal(wOnly.over.reason, 'LAST WORM STANDING');
+  assert.equal(wOnly.over.reason, 'LAST SPINE STANDING');
   assert.equal(wOnly.pawnLoss.length, 0, 'Worms-only never triggers chess piece removal');
 
   const bOnly = BC.Logic.create({ ...cfg, bomberTime: 15, playChess: false, playBomber: true, playWorms: false });

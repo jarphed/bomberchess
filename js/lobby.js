@@ -20,6 +20,7 @@
     for (let i = 0; i < lb.n; i++) out.push({ id: 'seat', i });
     if (m.playChess && (m.playBomber || m.playWorms)) out.push({ id: 'moves' });
     if (m.playBomber) out.push({ id: 'time' });
+    if (m.playWorms) out.push({ id: 'wormsTime' });
     if (m.playChess) out.push({ id: 'turn' });
     out.push({ id: 'brain' });
     if (m.playBomber) out.push({ id: 'power' });
@@ -52,6 +53,7 @@
     if (row.id === 'n') N.send({ k: 'cfg', n: u.clamp(lb.n + d, 2, 5) });
     else if (row.id === 'moves') N.send({ k: 'cfg', moves: u.clamp(lb.moves + d, 2, 30) });
     else if (row.id === 'time') N.send({ k: 'cfg', bomberTime: u.clamp(lb.bomberTime + d * 5, 15, 120) });
+    else if (row.id === 'wormsTime') N.send({ k: 'cfg', wormsTime: BC.wormsTimeOf(wormsTimeOf(lb) + d * BC.WORMS_TIME.step) });
     else if (row.id === 'brain') { setLevel('brain', brainOf(lb) + d); return; }
     else if (row.id === 'power') { setLevel('power', powerOf(lb) + d); return; }
     else if (row.id === 'turn') N.send({ k: 'cfg', turnTime: BC.turnTimeOf(turnOf(lb) + d * BC.TURN_TIME.step) });
@@ -67,6 +69,7 @@
   const powerOf = lb => BC.powerLevelOf(lb.powerLevel);
   const gateOf = lb => BC.gateRoundOf(lb.gateRound);
   const turnOf = lb => BC.turnTimeOf(lb.turnTime);
+  const wormsTimeOf = lb => BC.wormsTimeOf(lb.wormsTime);
 
   const VAL_X = ROW_X + ROW_W - 18, VAL_SIZE = 13;
   function valText(r) {
@@ -75,6 +78,7 @@
       case 'n': return String(lb.n);
       case 'moves': return String(lb.moves);
       case 'time': return lb.bomberTime + 's';
+      case 'wormsTime': return wormsTimeOf(lb) + 's';
       case 'turn': return turnOf(lb) + 's';
       case 'chain': return lb.chain ? 'ON' : 'OFF';
       case 'gates': return lb.gates ? 'ON' : 'OFF';
@@ -177,7 +181,7 @@
       const r = list[hit];
       const lvl = sliderAt(r.id, mx);
       if (lvl >= 0) { G.dragSlider = isHost() ? r.id : null; setLevel(r.id, lvl); }
-      else if (['n', 'moves', 'time', 'turn', 'brain', 'power', 'chain', 'gates', 'gateRound', 'revive'].includes(r.id)) adjust(r, clickDir(r, mx));
+      else if (['n', 'moves', 'time', 'wormsTime', 'turn', 'brain', 'power', 'chain', 'gates', 'gateRound', 'revive'].includes(r.id)) adjust(r, clickDir(r, mx));
       else if (r.id !== 'name') activate(G, r);
     }
   };
@@ -235,6 +239,10 @@
           break;
         case 'time':
           R.text(BC.isBomberOnly(lb) ? 'WALLS CLOSE AFTER' : 'BOMBER TIME', ROW_X + 16, y + 10, { size: 13 });
+          val(valText(r), '#fff', host);
+          break;
+        case 'wormsTime':
+          R.text('SPINES TURN TIME', ROW_X + 16, y + 10, { size: 13 });
           val(valText(r), '#fff', host);
           break;
         case 'turn':

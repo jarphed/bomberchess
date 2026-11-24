@@ -315,10 +315,13 @@
     const terrain = makeTerrain(mapSeed);
     const standalone = !!(L && L.settings && L.settings.playChess === false);
     const wormsOnly = !!(BC.isWormsOnly && L && L.settings && BC.isWormsOnly(L.settings));
+    const turnDur = BC.wormsTimeOf && L && L.settings && L.settings.wormsTime !== undefined
+      ? BC.wormsTimeOf(L.settings.wormsTime)
+      : TURN;
     const w = {
       terrain, mapSeed, theme: mapSeed % 4, standalone,
       units: [], active: -1, phase: 'aim', turnNo: 1, maxTurns: wormsOnly ? 9999 : 3,
-      timeLeft: TURN, retreat: 0, charge: 0, charging: false, chargeHeld: false, jumpHeld: false, cycleHeld: false,
+      turnDur, timeLeft: turnDur, retreat: 0, charge: 0, charging: false, chargeHeld: false, jumpHeld: false, cycleHeld: false,
       jumpTap: 0, weaponCue: 0, rearm: false, wind: 0, seed: mapSeed,
       projectile: null, fragments: [], muzzle: null, mortarStand: null,
       blast: null, echoes: [], craters: [], crates: [], kills: [], deathOrder: [], delay: 0,
@@ -599,7 +602,7 @@
   }
 
   function cpu(w, u, dt) {
-    const t = TURN - w.timeLeft;
+    const t = (w.turnDur || TURN) - w.timeLeft;
     const target = w.units.filter(v => v !== u && v.hp > 0)
       .sort((a, b) => Math.hypot(a.x - u.x, a.y - u.y) - Math.hypot(b.x - u.x, b.y - u.y))[0];
     if (!target) return {};
@@ -752,7 +755,7 @@
     w.crates.push({ kind, x: tx < W / 2 ? -14 : W + 14, y: 30, tx, ty, flying: true });
     w.phase = 'drop'; w.delay = 0.85;
     w.active = next.p; w.turnNo++;
-    w.timeLeft = TURN; w.retreat = 0; w.jumpTap = 0; w.weaponCue = 0;
+    w.timeLeft = w.turnDur || TURN; w.retreat = 0; w.jumpTap = 0; w.weaponCue = 0;
     w.muzzle = null; w.mortarStand = null;
     w.charging = w.jumpHeld = w.cycleHeld = w.rearm = false; w.charge = 0;
   }
@@ -797,6 +800,14 @@
         snd(L, 'weaponSwitch');
       }
       w.cycleHeld = !!input.cycle;
+      if (!w.charging && typeof input.aimAngle === 'number' && isFinite(input.aimAngle)) {
+        if (input.aimFace === 1 || input.aimFace === -1) u.face = input.aimFace;
+        if (u.weapon === 'mortar') {
+          u.angle = clamp(input.aimAngle, MORTAR_MIN, MORTAR_MAX);
+        } else {
+          u.angle = clamp(input.aimAngle, -1.15, 1.48);
+        }
+      }
       if (u.weapon === 'mortar') {
         enforceWeaponAngle(u);
         u.angle = clamp(u.angle - clamp(input.dy || 0, -1, 1) * 1.15 * dt, MORTAR_MIN, MORTAR_MAX);

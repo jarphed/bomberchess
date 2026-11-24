@@ -62,7 +62,7 @@
     const board = BC.Board.create(cfg.n);
     const M = {
       settings: {
-        n: cfg.n, moves: cfg.moves, bomberTime: cfg.bomberTime, brain: cfg.brain === undefined ? BC.BRAIN_DEFAULT : cfg.brain, ...BC.modeSettings(cfg),
+        n: cfg.n, moves: cfg.moves, bomberTime: cfg.bomberTime, wormsTime: BC.wormsTimeOf(cfg.wormsTime), brain: cfg.brain === undefined ? BC.BRAIN_DEFAULT : cfg.brain, ...BC.modeSettings(cfg),
         turnTime: BC.turnTimeOf(cfg.turnTime), chain: !!cfg.chain, gates: !!cfg.gates,
         gateRound: BC.gateRoundOf(cfg.gateRound), powerLevel: BC.powerLevelOf(cfg.powerLevel),
         revive: !!cfg.revive,

@@ -81,7 +81,7 @@
     R.text('2UP  000000', W - 40, 20, { size: 12, align: 'right', color: '#5ab0ff' });
 
     logo(G, W / 2, 70, 1);
-    R.text('CHESS  >  BOMBER  >  CHESS  >  WORMS', W / 2, 348, { size: 12, align: 'center', color: '#bff07a' });
+    R.text('CHESS  >  BOMBER  >  CHESS  >  SPINES', W / 2, 348, { size: 12, align: 'center', color: '#bff07a' });
 
     // decorative pieces either side
     const P = BC.Assets.pieces;
@@ -133,6 +133,7 @@
     for (let p = 0; p < s.n; p++) rows.push({ id: 'type', p });
     if (m.playChess && (m.playBomber || m.playWorms)) rows.push({ id: 'moves' });
     if (m.playBomber) rows.push({ id: 'time' });
+    if (m.playWorms) rows.push({ id: 'wormsTime' });
     if (m.playChess) rows.push({ id: 'turn' });
     rows.push({ id: 'brain' });
     if (m.playBomber) rows.push({ id: 'power' });
@@ -152,6 +153,7 @@
       case 'type': s.types[row.p] = s.types[row.p] === 'HUMAN' ? 'CPU' : 'HUMAN'; break;
       case 'moves': s.moves = u.clamp(s.moves + d, 2, 30); break;
       case 'time': s.bomberTime = u.clamp(s.bomberTime + d * 5, 15, 120); break;
+      case 'wormsTime': s.wormsTime = BC.wormsTimeOf(s.wormsTime + d * BC.WORMS_TIME.step); break;
       case 'brain': s.brain = u.clamp(s.brain + d, 0, BC.BRAINS.length - 1); break;
       case 'power': s.powerLevel = u.clamp(s.powerLevel + d, 0, BC.POWER_LEVELS.length - 1); break;
       case 'turn': s.turnTime = BC.turnTimeOf(s.turnTime + d * BC.TURN_TIME.step); break;
@@ -194,12 +196,12 @@
   const rowStep = n => Math.min(ROW_H, Math.floor((712 - ROW_Y0) / n));
 
   const modeKeys = ['playChess', 'playBomber', 'playWorms'];
-  const modeLabels = ['CHESS', 'BOMBERMAN', 'WORMS', 'DONE'];
+  const modeLabels = ['CHESS', 'BOMBERMAN', 'SPINES', 'DONE'];
   S.openModes = G => { G.modePicker = { idx: 0 }; G.dragSlider = null; A.play('menuSelect'); };
   S.drawModeRow = (cfg, x, y, w, enabled) => {
     const m = BC.modeSettings(cfg);
     R.text('GAME MODES', x + 16, y + 10, { size: 13 });
-    const label = [m.playChess && 'CHESS', m.playBomber && 'BOMBERMAN', m.playWorms && 'WORMS'].filter(Boolean).join(' + ');
+    const label = [m.playChess && 'CHESS', m.playBomber && 'BOMBERMAN', m.playWorms && 'SPINES'].filter(Boolean).join(' + ');
     R.text(label + (enabled ? '  v' : ''), x + w - 18, y + 11, { size: 11, align: 'right', color: enabled ? '#7fd8ff' : '#aab' });
   };
   const optionHeight = 32;
@@ -239,6 +241,7 @@
       case 'type': return s.types[r.p];
       case 'moves': return String(s.moves);
       case 'time': return s.bomberTime + 's';
+      case 'wormsTime': return BC.wormsTimeOf(s.wormsTime) + 's';
       case 'turn': return s.turnTime + 's';
       case 'chain': return s.chain ? 'ON' : 'OFF';
       case 'gates': return s.gates ? 'ON' : 'OFF';
@@ -283,7 +286,7 @@
       const r = rows[hit];
       const lvl = sliderAt(r.id, mx);
       if (lvl >= 0) { G.dragSlider = r.id; setLevel(G, r.id, lvl); }
-      else if (['n', 'moves', 'time', 'turn', 'brain', 'power', 'chain', 'gates', 'gateRound', 'revive'].includes(r.id)) adjust(G, r, clickDir(G, r, mx));
+      else if (['n', 'moves', 'time', 'wormsTime', 'turn', 'brain', 'power', 'chain', 'gates', 'gateRound', 'revive'].includes(r.id)) adjust(G, r, clickDir(G, r, mx));
       else activate(G, r);
     }
     const rows2 = setupRows(G);
@@ -421,6 +424,10 @@
           R.text(BC.isBomberOnly(s) ? 'WALLS CLOSE AFTER' : 'BOMBER TIME', ROW_X + 16, y + 11, { size: 14 });
           val(valText(G, r));
           break;
+        case 'wormsTime':
+          R.text('SPINES TURN TIME', ROW_X + 16, y + 11, { size: 14 });
+          val(valText(G, r));
+          break;
         case 'turn':
           R.text('TURN TIME', ROW_X + 16, y + 11, { size: 14 });
           if (sel) R.text('MISS YOUR TURN = A SHEEP!', ROW_X + 170, y + 14, { size: 8, color: '#aab' });
@@ -470,10 +477,10 @@
     const wormsOnly = BC.isWormsOnly(s), bomberOnly = BC.isBomberOnly(s);
     R.panel(px, py, pw, ph + 70, { bg: '#100c28', edge: '#4a3fa0' });
     R.text(s.n + ' PLAYERS', px + 20, py + 18, { size: 14, color: '#ffe14a' });
-    R.text(wormsOnly ? 'RANDOM WORMS MAP' : bomberOnly ? BC.BOARD_LABEL[s.n].name + ' ARENA' : BC.BOARD_LABEL[s.n].name + ' BOARD',
+    R.text(wormsOnly ? 'RANDOM SPINES MAP' : bomberOnly ? BC.BOARD_LABEL[s.n].name + ' ARENA' : BC.BOARD_LABEL[s.n].name + ' BOARD',
       px + pw - 20, py + 18, { size: 12, align: 'right', color: '#9cf' });
     drawPreview(G, px + 20, py + 50, pw - 40, ph - 40);
-    R.text(wormsOnly ? 'ワームズ ・ ランダムマップ' : bomberOnly ? 'ボンバーマン ・ バトルロイヤル' : BC.BOARD_LABEL[s.n].jp + ' ・ ' + s.n + 'つのベース',
+    R.text(wormsOnly ? 'スパインズ ・ ランダムマップ' : bomberOnly ? 'ボンバーマン ・ バトルロイヤル' : BC.BOARD_LABEL[s.n].jp + ' ・ ' + s.n + 'つのベース',
       px + pw / 2, py + ph + 20, { size: 22, jp: true, align: 'center', color: '#fff' });
   };
 
@@ -529,7 +536,7 @@
 
     R.panel(40, 80, 640, 560, { bg: '#100c28', edge: '#4a3fa0' });
     const lines = [
-      ['CHESS > BOMBER > CHESS > WORMS > REPEAT', '#ffe14a'],
+      ['CHESS > BOMBER > CHESS > SPINES > REPEAT', '#ffe14a'],
       ['1. CHESS: TAKE TURNS MOVING YOUR PIECES.', '#fff'],
       ['   CLICK ANY PIECE TO SEE HOW IT CAN MOVE.', '#aab'],
       ['   STEP ON OR SLIDE OVER POWER-UPS TO GRAB THEM.', '#aab'],
@@ -540,7 +547,7 @@
       ['   (NO PAWNS LEFT? ANOTHER PIECE GOES - WITH A BANG)', '#fc9'],
       ['   BLAST SOMEONE = ONE OF YOUR PAWNS REVIVES', '#fc9'],
       ['   FROM ROUND 3 THE WALLS CLOSE IN - FOR GOOD!', '#fc9'],
-      ['3. AFTER THE NEXT CHESS ROUND: WORMS!', '#bff07a'],
+      ['3. AFTER THE NEXT CHESS ROUND: SPINES!', '#bff07a'],
       ['   EACH CHESS PIECE TYPE UNLOCKS ITS OWN WEAPON!', '#aab'],
       ['   WALK: A/D   AIM: W/S   SPACE: JUMP   Q/WHEEL: WPN', '#aab'],
       ['   HOLD LEFT CLICK TO FIRE - THEN FLEE!', '#fc9'],

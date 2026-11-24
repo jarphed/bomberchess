@@ -115,7 +115,7 @@ function parseFrames(ws) {
 const clients = new Map(); // token -> client
 let nextId = 1;
 const lobby = {
-  n: 4, moves: 10, bomberTime: 45, brain: BC.BRAIN_DEFAULT, turnTime: BC.TURN_TIME.def, chain: true, gates: true, ...BC.modeSettings(),
+  n: 4, moves: 10, bomberTime: 45, wormsTime: BC.WORMS_TIME.def, brain: BC.BRAIN_DEFAULT, turnTime: BC.TURN_TIME.def, chain: true, gates: true, ...BC.modeSettings(),
   gateRound: BC.GATE_ROUND.def, powerLevel: BC.POWER_DEFAULT, revive: true,
   seats: [0, 1, 2, 3, 4].map(i => ({ type: i < 2 ? 'OPEN' : 'CPU', owner: null })),
 };
@@ -135,7 +135,7 @@ function lanUrls() {
 
 function lobbyMsg() {
   return JSON.stringify({
-    k: 'lobby', n: lobby.n, moves: lobby.moves, bomberTime: lobby.bomberTime, brain: lobby.brain, ...BC.modeSettings(lobby),
+    k: 'lobby', n: lobby.n, moves: lobby.moves, bomberTime: lobby.bomberTime, wormsTime: lobby.wormsTime, brain: lobby.brain, ...BC.modeSettings(lobby),
     turnTime: lobby.turnTime, chain: lobby.chain, gates: lobby.gates, gateRound: lobby.gateRound, powerLevel: lobby.powerLevel,
     revive: lobby.revive,
     host: hostToken,
@@ -175,7 +175,7 @@ function startGame() {
   const types = seats.map(s => (s.type === 'HUMAN' && s.owner && online(s.owner) ? 'HUMAN' : 'CPU'));
   const names = seats.map(s => (s.type === 'HUMAN' && s.owner && clients.get(s.owner) ? clients.get(s.owner).name : 'CPU'));
   const cfg = {
-    n, moves: lobby.moves, bomberTime: lobby.bomberTime, brain: lobby.brain, turnTime: lobby.turnTime, chain: lobby.chain, ...BC.modeSettings(lobby),
+    n, moves: lobby.moves, bomberTime: lobby.bomberTime, wormsTime: lobby.wormsTime, brain: lobby.brain, turnTime: lobby.turnTime, chain: lobby.chain, ...BC.modeSettings(lobby),
     gates: lobby.gates, gateRound: lobby.gateRound, powerLevel: lobby.powerLevel, revive: lobby.revive, types, names,
   };
   const L = BC.Logic.create(cfg);
@@ -279,6 +279,7 @@ function handle(c, msg) {
         if (next.playChess || next.playBomber || next.playWorms) Object.assign(lobby, next);
       }
       if (Number.isInteger(m.bomberTime)) lobby.bomberTime = Math.max(15, Math.min(120, m.bomberTime));
+      if (Number.isInteger(m.wormsTime)) lobby.wormsTime = BC.wormsTimeOf(m.wormsTime);
       if (Number.isInteger(m.brain)) lobby.brain = Math.max(0, Math.min(BC.BRAINS.length - 1, m.brain));
       if (Number.isInteger(m.turnTime)) lobby.turnTime = BC.turnTimeOf(m.turnTime);
       if (typeof m.chain === 'boolean') lobby.chain = m.chain;
@@ -304,6 +305,10 @@ function handle(c, msg) {
       cur.cycle ||= m.cycle === true;
       if (m.wheel) cur.wheel = Math.sign(Number(m.wheel) || 0);
       if (typeof m.select === 'string' && m.select.length < 16) cur.select = m.select;
+      if (typeof m.aimAngle === 'number' && isFinite(m.aimAngle)) {
+        cur.aimAngle = m.aimAngle;
+        if (m.aimFace === 1 || m.aimFace === -1) cur.aimFace = m.aimFace;
+      }
       cur.charge = m.charge === true;
       cur.chargePress ||= cur.charge;
       break;
@@ -390,7 +395,7 @@ function step(dt) {
   if (w) {
     const i = game.wormInput;
     inputs[w.active] = i ? { ...i, charge: i.charge || i.chargePress } : {};
-    if (i) { i.jump = i.cycle = i.chargePress = false; i.select = ''; i.wheel = 0; }
+    if (i) { i.jump = i.cycle = i.chargePress = false; i.select = ''; i.wheel = 0; i.aimAngle = undefined; i.aimFace = undefined; }
   }
   L.update(dt, inputs);
   if (w && (!L.worms || w.turnNo !== turn || L.players[w.active].type !== 'HUMAN')) game.wormInput = null;

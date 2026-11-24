@@ -8,7 +8,7 @@
   const G = {
     screen: 'loading', time: 0, mode: 'local', S: null,
     settings: {
-      n: 4, types: ['HUMAN', 'CPU', 'CPU', 'CPU', 'CPU'], moves: 10, bomberTime: 45, brain: BC.BRAIN_DEFAULT, ...BC.modeSettings(),
+      n: 4, types: ['HUMAN', 'CPU', 'CPU', 'CPU', 'CPU'], moves: 10, bomberTime: 45, wormsTime: BC.WORMS_TIME.def, brain: BC.BRAIN_DEFAULT, ...BC.modeSettings(),
       turnTime: BC.TURN_TIME.def, chain: true, gates: true, gateRound: BC.GATE_ROUND.def, powerLevel: BC.POWER_DEFAULT,
       revive: true,
     },
@@ -209,7 +209,7 @@
     const types = s.types.slice(0, s.n);
     const names = types.map(t => (t === 'HUMAN' ? 'P' + (++h) : 'CPU'));
     const L = BC.Logic.create({
-      n: s.n, moves: s.moves, bomberTime: s.bomberTime, brain: s.brain, turnTime: s.turnTime, chain: s.chain, gates: s.gates, ...BC.modeSettings(s),
+      n: s.n, moves: s.moves, bomberTime: s.bomberTime, wormsTime: s.wormsTime, brain: s.brain, turnTime: s.turnTime, chain: s.chain, gates: s.gates, ...BC.modeSettings(s),
       gateRound: s.gateRound, powerLevel: s.powerLevel, revive: s.revive, types, names,
     });
     attach(L, 'local');
@@ -418,9 +418,27 @@
       if (raw.slot >= 1 && raw.slot <= avail.length) select = avail[raw.slot - 1];
     }
     const charge = G.wormUiClick ? raw.padCharge : raw.charge;
+    let aimAngle, aimFace;
+    if (unit && w.phase === 'aim' && !w.charging && !raw.dy && BC.WormsView && BC.WormsView.FIELD) {
+      const F = BC.WormsView.FIELD, mx = I.mouse.x, my = I.mouse.y;
+      if ((I.mouse.moved || (I.mouse.clicked && !G.wormUiClick)) &&
+          mx >= F.x && mx <= F.x + F.w && my >= F.y && my <= F.y + F.h) {
+        let ox = unit.x, oy = unit.y - 14;
+        if (unit.weapon === 'mortar') {
+          const mb = BC.Worms.mortarBase(w, unit);
+          ox = mb.x; oy = mb.y - 4;
+        }
+        const vx = (mx - F.x) - ox, vy = (my - F.y) - oy;
+        if (Math.hypot(vx, vy) > 4) {
+          aimFace = Math.abs(vx) < 2 ? unit.face : (vx < 0 ? -1 : 1);
+          aimAngle = Math.round(Math.atan2(-vy, Math.abs(vx)) * 1000) / 1000;
+        }
+      }
+    }
     const inp = { dx: raw.dx, dy: raw.dy, jump: raw.jump, cycle: raw.cycle, wheel: raw.wheel, select, charge };
+    if (aimAngle !== undefined) { inp.aimAngle = aimAngle; inp.aimFace = aimFace; }
     if (G.mode === 'local') return { [p]: inp };
-    const key = [w.turnNo, p, inp.dx, inp.dy, inp.charge].join(',');
+    const key = [w.turnNo, p, inp.dx, inp.dy, inp.charge, aimAngle === undefined ? '' : aimAngle, aimFace || ''].join(',');
     if (key !== G.wormInputKey || inp.jump || inp.cycle || inp.wheel || inp.select) {
       G.wormInputKey = key;
       N.send({ k: 'wi', s: p, round: G.chessRound, turn: w.turnNo, ...inp });

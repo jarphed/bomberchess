@@ -29,7 +29,7 @@
 
   function ensureFx(w) {
     if (!fx || fx.terrain !== w.terrain) {
-      fx = { terrain: w.terrain, drops: [], gibs: [], mists: [], nums: [], splashes: [] };
+      fx = { terrain: w.terrain, drops: [], gibs: [], mists: [], nums: [], splashes: [], tracks: new Map() };
     }
     return fx;
   }
@@ -61,6 +61,43 @@
   }
 
   const gibCache = new Map();
+  const headCache = new Map();
+  // Per-player bomberman head extraction from A.chars[p] frame 4 (side-facing right, 16x16).
+  // Each head is cropped to an 8x8 sprite with the neck centered at x=4, y=7.
+  const HEAD_SPEC = [
+    { ox: 4, y6: [2, 6], y7: [2, 5] }, // 0: orange
+    { ox: 3, y6: [1, 7], y7: [2, 5] }, // 1: purple
+    { ox: 3, y6: [2, 6], y7: [3, 5] }, // 2: green
+    { ox: 3, y6: [2, 6], y7: [3, 5] }, // 3: blue
+    { ox: 3, y6: [2, 6], y7: [3, 5] }, // 4: red (hue-shifted green)
+  ];
+
+  function headSprite(p) {
+    const idx = p % HEAD_SPEC.length;
+    if (headCache.has(idx)) return headCache.get(idx);
+    const [cv, g] = A.canvas(8, 8);
+    const src = A.chars && A.chars[idx];
+    if (src && A.ready && A.ok.sheet) {
+      const sp = HEAD_SPEC[idx];
+      // Copy rows 0..7 of frame 4 (facing right) aligned so the neck sits at x=4.
+      g.drawImage(src, 4 * A.T + sp.ox, 0, 8, 8, 0, 0, 8, 8);
+      // Trim shoulder pixels on rows 6 and 7 so only the head & chin remain.
+      if (sp.y6[0] > 0) g.clearRect(0, 6, sp.y6[0], 1);
+      if (sp.y6[1] < 7) g.clearRect(sp.y6[1] + 1, 6, 7 - sp.y6[1], 1);
+      if (sp.y7[0] > 0) g.clearRect(0, 7, sp.y7[0], 1);
+      if (sp.y7[1] < 7) g.clearRect(sp.y7[1] + 1, 7, 7 - sp.y7[1], 1);
+      headCache.set(idx, cv);
+      return cv;
+    }
+    // Fallback head if spritesheet hasn't loaded yet (not cached).
+    const pal = { k: '#1e1624', c: BC.PLAYER_COLORS[idx] || gold, d: BC.PLAYER_DARK[idx] || ink, e: '#fff7de' };
+    ['..kkkk..', '.kcccck.', 'kcccccck', 'kccckek.', 'kcccccck', '.kddddk.', '..kkkk..']
+      .forEach((row, y) => {
+        for (let x = 0; x < row.length; x++) if (pal[row[x]]) rect(g, x, y + 1, 1, 1, pal[row[x]]);
+      });
+    return cv;
+  }
+
   function makeSprite(rows, palette) {
     const [cv, g] = A.canvas(rows[0].length, rows.length);
     rows.forEach((row, y) => {
@@ -73,24 +110,24 @@
   function wormGibs(p) {
     if (gibCache.has(p)) return gibCache.get(p);
     const pal = {
-      k: '#29212e', p: '#e98987', l: '#ffb49a', s: '#ba6576',
-      t: BC.PLAYER_COLORS[p] || gold, d: BC.PLAYER_DARK[p] || ink,
-      h: '#ffefc2', w: '#fff7de', r: RED[3], b: RED[1], o: '#f4ecdc',
+      k: '#180d16', w: '#fff9ec', o: '#e5d5b5', s: '#b29b7d', d: '#735d4c',
+      R: '#ff3b47', r: '#c81422', m: '#8a0c18', b: '#4a050c', p: '#d95f6a',
     };
     const parts = [
-      // Helmet (keeps player color)
-      { img: makeSprite(['..kkkkk..', '.khttthk.', 'khtttttdk', 'ktttttddk', 'kddkkkkkk'], pal), s: 2.2, keep: true },
-      // Torn head chunk
-      { img: makeSprite(['.kkkkkk.', 'kppkwkwk', 'kplkwkwk', 'kplllppk', '.brrrrb.'], pal), s: 2, keep: true },
-      // Fleshy tail & belly chunks
-      { img: makeSprite(['.brrrb.', 'kpppspk', 'klplspk', '.kkkkk.'], pal), s: 2, keep: true },
-      { img: makeSprite(['.klllk.', 'kppsppk', '.brrrb.'], pal), s: 2, keep: false },
-      { img: makeSprite(['.brrb.', 'kpsspk', '.kkkk.'], pal), s: 2, keep: false },
-      // Pixel bones
-      { img: makeSprite(['r....o', 'rooooo', 'r....o'], pal), s: 2.2, keep: true },
-      { img: makeSprite(['o....r', 'ooooor', 'o....r'], pal), s: 2, keep: false },
+      // Detached bomberman head (keeps player color)
+      { img: headSprite(p), s: 2.2, keep: true },
+      // Shattered bloody ribcage chunk
+      { img: makeSprite(['.kwojkbrwk', 'kdkwsmRmrk', '.kwojkbrpk', '..krmbrmk.'], pal), s: 2.1, keep: true },
+      // Jagged bloody spine segment
+      { img: makeSprite(['.kdkojk.', 'kdkwosk.', '.kdkrmk.', '..kRrb..'], pal), s: 2.1, keep: true },
+      // Raw viscera / meat chunks
+      { img: makeSprite(['.krmrk.', 'kRpmrmk', '.kbmrk.'], pal), s: 2, keep: false },
+      { img: makeSprite(['.kbrb.', 'kRmpmk', '.kmmk.'], pal), s: 2, keep: false },
+      // Bloody broken ribs & bones
+      { img: makeSprite(['r....o', 'roooow', 'r....o'], pal), s: 2.2, keep: true },
+      { img: makeSprite(['o....R', 'woooRr', 'o....r'], pal), s: 2.2, keep: false },
     ];
-    gibCache.set(p, parts);
+    if (A.ready && A.ok.sheet) gibCache.set(p, parts);
     return parts;
   }
   function sheepGibs() {
@@ -233,6 +270,58 @@
     st.nums = st.nums.filter(n => n.age < n.dur);
     st.splashes.forEach(s => { s.age += dt; });
     st.splashes = st.splashes.filter(s => s.age < 0.55);
+
+    // Blood trail left behind by moving heads/spines + periodic dripping from exposed ribcage.
+    if (w.units) {
+      for (const u of w.units) {
+        if (u.hp <= 0) { st.tracks.delete(u.p); continue; }
+        const prev = st.tracks.get(u.p);
+        if (!prev) {
+          st.tracks.set(u.p, { x: u.x, y: u.y, dist: 0, drip: 0.4 + Math.random() * 0.9 });
+          continue;
+        }
+        prev.drip -= dt;
+        if (prev.drip <= 0) {
+          prev.drip = 0.55 + Math.random() * 1.1;
+          if (st.drops.length < 450) {
+            st.drops.push({
+              x: u.x + u.face * (1 + Math.random() * 4), y: u.y - 12 - Math.random() * 5,
+              vx: (Math.random() - 0.5) * 14, vy: 10 + Math.random() * 20,
+              sz: 2, col: RED[1 + Math.floor(Math.random() * 3)], age: 0,
+            });
+          }
+        }
+        const moved = Math.hypot(u.x - prev.x, u.y - prev.y);
+        if (moved > 0.2 && moved < 48) {
+          prev.dist += moved;
+          if (u.grounded) {
+            if (prev.dist >= 4.5) {
+              prev.dist %= 4.5;
+              const tx = u.x - u.face * 5, ty = u.y + 1;
+              stainTerrain(tx, ty, 3.8 + Math.random() * 2.2);
+              for (let k = 0; k < 2 && st.drops.length < 450; k++) {
+                st.drops.push({
+                  x: tx + (Math.random() - 0.5) * 6, y: u.y - 2 - k * 4,
+                  vx: -u.face * (16 + Math.random() * 34) + (Math.random() - 0.5) * 18,
+                  vy: -(18 + Math.random() * 42),
+                  sz: Math.random() < 0.38 ? 3 : 2, col: RED[1 + Math.floor(Math.random() * 3)], age: 0,
+                });
+              }
+            }
+          } else if (prev.dist >= 10) {
+            prev.dist %= 10;
+            if (st.drops.length < 450) {
+              st.drops.push({
+                x: u.x - u.face * 4 + (Math.random() - 0.5) * 4, y: u.y - 8,
+                vx: -u.face * 14 + (Math.random() - 0.5) * 24, vy: 12,
+                sz: Math.random() < 0.35 ? 3 : 2, col: RED[2 + Math.floor(Math.random() * 2)], age: 0,
+              });
+            }
+          }
+        }
+        prev.x = u.x; prev.y = u.y;
+      }
+    }
   }
 
   function drawFxLayer(g, w) {
@@ -551,41 +640,118 @@
   }
 
   const wormFrames = new Map();
-  function wormFrame(p, curl, blink) {
-    const key = p * 4 + Number(curl) * 2 + Number(blink);
+  const SPINE_PAL = {
+    k: '#140c14', w: '#ffffff', o: '#ece2cf', s: '#bdb09c',
+    R: '#ff2b3a', r: '#c41220', m: '#7a0a14',
+  };
+  // 28x32 pixel poses: Bomberman head + vertical segmented spine + 6 compact barrel ribs
+  // (3 clearly separated ribs on each side, curving inward around the torso).
+  // Grounded bends the lower spine along the ground; mid-air hangs the spine straight down.
+  const SPINE_POSES = {
+    idle: {
+      hx: 11, hy: 1, hs: 10, sy: 10,
+      rows: [
+        '..............kkrwk.........',
+        '...........kkkkwwokkkk......',
+        '..........kwoR.krok.Rwwk....',
+        '...........kkkkkwwokkkk.....',
+        '..............krok..........',
+        '..........kkkkkwwokkkkk.....',
+        '.........kwoR..krok..Rwwk...',
+        '..........kkkkkkwwokkkkk....',
+        '..............krok..........',
+        '...........kkkkwwokkkk......',
+        '..........kwoR.krok.Rwwk....',
+        '...........kkkkkwwokkkk.....',
+        '..............krok..........',
+        '..............kwwok.........',
+        '.............krwook.........',
+        '..........kkkwwok...........',
+        '.....kkkkkwoorok............',
+        '.kkkkwookkwookk.............',
+        'krwookwookwook..............',
+        'kRmmkkrmkkrmk...............',
+      ],
+    },
+    step: {
+      hx: 12, hy: 2, hs: 10, sy: 11,
+      rows: [
+        '...............kkrwk........',
+        '............kkkkwwokkkk.....',
+        '...........kwoR.krok.Rwwk...',
+        '............kkkkkwwokkkk....',
+        '...............krok.........',
+        '...........kkkkkwwokkkkk....',
+        '..........kwoR..krok..Rwwk..',
+        '...........kkkkkkwwokkkkk...',
+        '...............krok.........',
+        '............kkkkwwokkkk.....',
+        '...........kwoR.krok.Rwwk...',
+        '............kkkkkwwokkkk....',
+        '...............krok.........',
+        '...............kwwok........',
+        '.........kkkk.krook.........',
+        '......kkkwookkwwok..........',
+        '...kkkwook..krwook..........',
+        '..krwook....kwwok...........',
+        '..kRmmk......krmk...........',
+        '...kkk........kkk...........',
+      ],
+    },
+    jump: {
+      hx: 11, hy: 0, hs: 10, sy: 9,
+      rows: [
+        '..............kkrwk.........',
+        '...........kkkkwwokkkk......',
+        '..........kwoR.krok.Rwwk....',
+        '...........kkkkkwwokkkk.....',
+        '..............krok..........',
+        '..........kkkkkwwokkkkk.....',
+        '.........kwoR..krok..Rwwk...',
+        '..........kkkkkkwwokkkkk....',
+        '..............krok..........',
+        '...........kkkkwwokkkk......',
+        '..........kwoR.krok.Rwwk....',
+        '...........kkkkkwwokkkk.....',
+        '..............krok..........',
+        '..............kwwk..........',
+        '..............krok..........',
+        '...............kkk..........',
+        '..............krwk..........',
+        '..............kwok..........',
+        '...............kk...........',
+        '...............kwk..........',
+        '...............krk..........',
+        '...............kk...........',
+        '................k...........',
+      ],
+    },
+  };
+
+  function wormFrame(p, pose) {
+    const key = p + ':' + pose;
     if (wormFrames.has(key)) return wormFrames.get(key);
-    const [cv, g] = A.canvas(21, 14);
-    const colors = {
-      k: '#29212e', p: '#e98987', l: '#ffb49a', s: '#ba6576', b: '#ffe2b7',
-      t: BC.PLAYER_COLORS[p], d: BC.PLAYER_DARK[p], h: '#ffefc2', w: '#fff7de',
-    };
-    const stamp = (rows, x, y) => rows.forEach((row, i) => {
-      for (let j = 0; j < row.length; j++) if (colors[row[j]]) rect(g, x + j, y + i, 1, 1, colors[row[j]]);
+    const [cv, g] = A.canvas(28, 32);
+    const spec = SPINE_POSES[pose] || SPINE_POSES.idle;
+    spec.rows.forEach((row, i) => {
+      for (let j = 0; j < row.length; j++) {
+        if (SPINE_PAL[row[j]]) rect(g, j, spec.sy + i, 1, 1, SPINE_PAL[row[j]]);
+      }
     });
-    // Two tail poses pull the belly forward while the helmet stays steady.
-    stamp(curl ? [
-      '.....kkkkkkk', '..kkklllllppk', '.klpllsllsplpk', 'kppppsppsspspk',
-      '.kssssssppssk', '..kkkkkkkkkk',
-    ] : [
-      '........kkk', '...kkkkklllk', '.kkllplllsllpk', 'kllplspllspplpk',
-      '.kpppsppsppssk', '..ksssssspssk', '...kkkkkkkkk',
-    ], curl ? 1 : 0, curl ? 8 : 7);
-    stamp([
-      '...kkkkk', '..khttthk', '.khtttttdk', '.ktttttdddk', 'kddkkkkkkkk',
-      blink ? '.kppkkkkpk' : '.kppkwkwkk', blink ? '.kpllpppllk' : '.kplkwkwklk',
-      '.kpllllbbbpk', '..kpllkpppk', '..kpppllllk', '.kppsspppk', 'kpssspppk',
-      'kksssskk', '..kkkk',
-    ], 9, 0);
-    wormFrames.set(key, cv);
+    g.drawImage(headSprite(p), spec.hx, spec.hy, spec.hs, spec.hs);
+    if (A.ready && A.ok.sheet) wormFrames.set(key, cv);
     return cv;
   }
-  function drawWorm(g, u, x, y, w, h, time) {
-    const curl = !u.grounded || (Math.floor(u.x / 5 + time * 1.4 + u.p) % 4 === 1);
-    const blink = (time + u.p * .7) % 3.9 > 3.72;
+  function drawWorm(g, u, x, y, w, h, time, staticPose) {
+    let pose = 'idle';
+    if (!staticPose) {
+      if (!u.grounded) pose = 'jump';
+      else if (Math.floor(u.x / 5 + time * 1.4 + u.p) % 4 === 1) pose = 'step';
+    }
     g.save();
     g.translate(Math.round(x), Math.round(y));
     if (u.face < 0) g.scale(-1, 1);
-    g.drawImage(wormFrame(u.p, curl, blink), -w / 2, -h, w, h);
+    g.drawImage(wormFrame(u.p, pose), -w / 2, -h, w, h);
     g.restore();
   }
 
@@ -813,13 +979,13 @@
     if (u.hp <= 0) return;
     const active = u.p === w.active && w.phase === 'aim', c = BC.PLAYER_COLORS[u.p];
     const x = Math.round(u.x), y = Math.round(u.y);
-    drawWorm(g, u, x, y, 42, 28, G.time);
+    drawWorm(g, u, x, y, 42, 48, G.time, false);
     if (active) drawHeldWeapon(g, w, u, x, y);
     const bx = Math.min(FIELD.w - 37, Math.max(1, x - 18));
-    rect(g, bx, y - 47, 36, 14, ink);
-    rect(g, bx + 2, y - 36, 32, 2, '#243242');
-    rect(g, bx + 2, y - 36, 32 * Math.max(0, u.hp / 100), 2, c);
-    text(BC.PLAYER_NAMES[u.p] + ' ' + Math.ceil(u.hp), bx + 18, y - 45, 6, active ? gold : ice, 'center');
+    rect(g, bx, y - 63, 36, 14, ink);
+    rect(g, bx + 2, y - 52, 32, 2, '#243242');
+    rect(g, bx + 2, y - 52, 32 * Math.max(0, u.hp / 100), 2, c);
+    text(BC.PLAYER_NAMES[u.p] + ' ' + Math.ceil(u.hp), bx + 18, y - 61, 6, active ? gold : ice, 'center');
   }
 
   function drawHeavenlyLight(g, q) {
@@ -1006,7 +1172,7 @@
       const y = 330 + 44 * i, c = BC.PLAYER_COLORS[u.p], active = w.active === u.p;
       rect(g, l, y, inner, 38, active ? '#314253' : '#182331');
       rect(g, l, y, 3, 38, active ? gold : '#394a59');
-      drawWorm(g, u, l + 22, y + 29, 28, 19, G.time);
+      drawWorm(g, u, l + 22, y + 34, 26, 30, G.time, true);
       text(BC.PLAYER_NAMES[u.p], l + 40, y + 6, 10, c);
       const count = BC.Worms.available(u).length;
       text(count + ' WPN', l + 82, y + 8, 7, muted);
@@ -1025,7 +1191,7 @@
     text('GAMEPAD', 38, 673, 8, muted);
     const cells = [
       [148, 'A/D OR \u2190/\u2192', 'WALK & FLEE', 'PAD \u2190/\u2192'],
-      [324, 'W/S OR \u2191/\u2193', 'AIM ANGLE', 'PAD \u2191/\u2193'],
+      [324, 'W/S OR MOUSE', 'AIM ANGLE', 'PAD \u2191/\u2193'],
       [488, 'SPACE (x2)', 'JUMP / BACKFLIP', 'A BUTTON'],
       [648, 'Q / SCROLL', standalone ? 'SELECT WEAPON' : 'PIECE WEAPON', 'Y / WHEEL'],
       [800, 'LEFT CLICK', 'CHARGE / DETONATE', 'X BUTTON'],
@@ -1055,8 +1221,8 @@
     const retreating = unit && (w.phase === 'shot' || w.phase === 'settle') && w.retreat > 0 && !unit.hurt;
     const bm = BIOMES[(w.theme || 0) % BIOMES.length];
     rect(g, 24, 18, 5, 45, gold);
-    text(w.standalone ? 'WORMS  /  LAST WORM STANDING' : 'BOMBER CHESS  /  PIECE ARTILLERY', 42, 18, 9, muted);
-    text('WORMS', 40, 38, 25, ice); text(bm.name, 197, 45, 15, gold);
+    text(w.standalone ? 'SPINES  /  LAST SPINE STANDING' : 'BOMBER CHESS  /  PIECE ARTILLERY', 42, 18, 9, muted);
+    text('SPINES', 40, 38, 25, ice); text(bm.name, 197, 45, 15, gold);
     text('TURN ' + w.turnNo + '  /  ' + (retreating ? 'RETREAT!' : (phaseNames[w.phase] || 'STANDBY')), 474, 19, 10, retreating ? '#9ef57a' : muted);
     const mine = unit && G.isMine && G.isMine(unit.p);
     text(unit ? BC.PLAYER_NAMES[unit.p] + (mine ? '  YOUR TURN' : '  ON TURN') : 'STANDBY', 474, 40, 18, accent);
@@ -1093,5 +1259,5 @@
     sidebar(g, G, w, unit); controls(g, !!w.standalone);
     g.restore();
   }
-  BC.WormsView = { draw, blood: spawnBlood, weaponAt };
+  BC.WormsView = { draw, blood: spawnBlood, weaponAt, FIELD };
 })();

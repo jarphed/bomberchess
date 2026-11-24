@@ -9,7 +9,7 @@
     const Ch = BC.Chess;
     const L = {
       settings: {
-        n: cfg.n, moves: cfg.moves, bomberTime: cfg.bomberTime, ...BC.modeSettings(cfg),
+        n: cfg.n, moves: cfg.moves, bomberTime: cfg.bomberTime, wormsTime: BC.wormsTimeOf(cfg.wormsTime), ...BC.modeSettings(cfg),
         brain: u.clamp(cfg.brain === undefined ? BC.BRAIN_DEFAULT : cfg.brain | 0, 0, BC.BRAINS.length - 1),
         turnTime: BC.turnTimeOf(cfg.turnTime), chain: !!cfg.chain, gates: !!cfg.gates,
         gateRound: BC.gateRoundOf(cfg.gateRound), powerLevel: BC.powerLevelOf(cfg.powerLevel),
@@ -74,7 +74,7 @@
         L.chess.powerups.clear();
         L.worms = BC.Worms.create(L);
         L.phase = 'worms';
-        if (first) banner('WORMS START!', 'ワーム スタート', { color: '#bff07a', dur: 1.8, force: true });
+        if (first) banner('SPINES START!', 'スパイン スタート', { color: '#bff07a', dur: 1.8, force: true });
         snd('phaseWorms');
         touch();
         return;
@@ -425,7 +425,7 @@
       const worms = next === 'worms';
       L.phase = worms ? 'toWorms' : 'toBomber';
       L.transT = 0;
-      if (worms) banner('WORMS TIME!', 'ワームタイム', { color: '#bff07a', dur: 2.2, force: true });
+      if (worms) banner('SPINES TIME!', 'スパインタイム', { color: '#bff07a', dur: 2.2, force: true });
       else banner('BOMBER TIME!!', 'ボンバータイム', { color: '#ff7a3c', dur: 2.4, force: true });
       snd(worms ? 'phaseWorms' : 'phaseBomber');
       touch();
@@ -678,7 +678,7 @@
           const aliveUnits = w.units.filter(b => b.hp > 0);
           let standing = aliveUnits.map(b => b.p);
           if (wormsOnly) {
-            finishStandalone(standing, w.deathOrder, 'LAST WORM STANDING', 'BLOWN UP');
+            finishStandalone(standing, w.deathOrder, 'LAST SPINE STANDING', 'BLOWN UP');
           } else {
             // If the turn limit ends the round with multiple worms alive, a unique highest-HP leader still wins the round.
             if (aliveUnits.length > 1) {

@@ -81,6 +81,15 @@
     return Math.min(T.max, Math.max(T.min, Math.round(v / T.step) * T.step));
   };
 
+  // seconds per Spines turn, set in the lobby
+  BC.WORMS_TIME = { min: 5, max: 60, step: 5, def: 15 };
+  BC.wormsTimeOf = v => {
+    const T = BC.WORMS_TIME;
+    v = Number(v);
+    if (!isFinite(v)) return T.def;
+    return Math.min(T.max, Math.max(T.min, Math.round(v / T.step) * T.step));
+  };
+
   // SHEEP GATES (a lobby option): the gates in the board's corners swing open when the chess round set in the
   // lobby starts (GATE_ROUND), and from then on each gate lets one sheep in at the start of every chess round.
   // GATE_SHEEP caps the wandering sheep on the board at this many per gate.

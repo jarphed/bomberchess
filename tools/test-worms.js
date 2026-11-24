@@ -435,4 +435,29 @@ for (const kind of ['grenade', 'rocket']) {
   assert(shortDist > 0 && shortDist < 55, `min-power grenade barely throws (dist=${shortDist.toFixed(1)})`);
   assert(longDist > 580, `max-power grenade throws far across the map (dist=${longDist.toFixed(1)})`);
 }
+
+// Custom Spines turn time from lobby settings applies on initial turn and subsequent turns.
+{
+  const L = game();
+  L.settings = { wormsTime: 25 };
+  const w = Worms.create(L);
+  assert.equal(w.turnDur, 25);
+  assert.equal(w.timeLeft, 25);
+  Worms.update(L, w, 25.2, {});
+  assert.equal(w.turnNo, 2);
+  assert.equal(w.timeLeft, 25, 'next turn resets clock to custom wormsTime');
+}
+
+// Mouse aiming sets angle and facing before charging, then locks aim once charging begins.
+{
+  const { w, step } = range(), [a] = w.units;
+  step(tick, { aimAngle: 0.9, aimFace: -1 });
+  assert.equal(a.face, -1);
+  assert(Math.abs(a.angle - 0.9) < 1e-6, 'mouse aim updates angle before charging');
+  step(tick, { charge: true, aimAngle: 0.9, aimFace: -1 });
+  assert.equal(w.charging, true);
+  step(tick, { charge: true, aimAngle: -0.5, aimFace: 1 });
+  assert.equal(a.face, -1, 'facing stays locked while charging');
+  assert(Math.abs(a.angle - 0.9) < 1e-6, 'aim angle stays locked while charging');
+}
 console.log('Worms tests passed (terrain, CPU, turns, controls, weapons, crates, elimination).');

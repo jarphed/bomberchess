@@ -854,7 +854,7 @@
     const bomberish = G.phase === 'bomber' || G.phase === 'toBomber';
     R.panel(HX + 12, py, HW - 24, 104, { bg: bomberish ? '#3a0f1a' : '#0f2a3a', edge: bomberish ? '#ff5a3c' : '#3fc0ff' });
     if (G.phase === 'toWorms') {
-      R.text('WORMS PHASE', HX + 26, py + 12, { size: 18, color: '#bff07a' });
+      R.text('SPINES PHASE', HX + 26, py + 12, { size: 18, color: '#bff07a' });
       R.text(G.cfg && G.cfg.playChess ? 'YOUR PIECES UNLOCK WEAPONS!' : 'GET READY FOR ARTILLERY!', HX + 26, py + 50, { size: 12, color: '#fff' });
     } else if (bomberOnly) {
       R.text('BOMBERMAN', HX + 26, py + 12, { size: 18, color: '#ff8a5c' });
